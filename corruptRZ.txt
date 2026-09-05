@@ -1,4 +1,4 @@
---// Rayfield Gen 2 Interface Setup (MAX OVERLOAD v4) \\--
+--// Rayfield Gen 2 Interface Setup (MAX OVERLOAD ULTRA v5) \\--
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- Notification Wrapper
@@ -44,6 +44,17 @@ local zombieGameData = {
 	["Functions"] = {}
 }
 
+-- Remotes Discovery
+local Events = ReplicatedStorage:FindFirstChild("Events") or ReplicatedStorage
+local Remote_XPGain       = Events:FindFirstChild("XPGain")
+local Remote_Gift         = Events:FindFirstChild("Gift")
+local Remote_UseToken     = Events:FindFirstChild("UseToken")
+local Remote_ForceRevive  = Events:FindFirstChild("ForceRevive")
+local Remote_BadgeAward   = Events:FindFirstChild("BadgeAward")
+local Remote_DataChange   = Events:FindFirstChild("DataChange")
+local Remote_ChatCommand  = Events:FindFirstChild("ChatCommand")
+local Remote_GameSound    = Events:FindFirstChild("GameSound")
+
 -- Loop Tracking
 local loopConnections = {}
 local function stoploop(name)
@@ -77,6 +88,14 @@ local function getPlayer(target)
 		end
 	end
 	return found
+end
+
+-- Helper for safe Callback value extraction (Fixes Callback Errors)
+local function parseOption(option)
+	if type(option) == "table" then
+		return option[1] or ""
+	end
+	return option or ""
 end
 
 --========================================================--
@@ -117,7 +136,7 @@ if hookmetamethod then
 				if getChar() and (targetHum == getChar() or (targetHum:IsA("Humanoid") and targetHum.Parent == getChar())) then
 					local dmgVal = args[1][2]
 					if type(dmgVal) == "number" and dmgVal > 0 then
-						return -- Block damage remote calls aimed at local player
+						return -- Block damage remote calls
 					end
 				end
 			end
@@ -146,7 +165,6 @@ if hookmetamethod then
 		return oldRaycast(self, origin, direction, params, ...)
 	end)
 
-	-- Safe yield timeout
 	local timeout = 0
 	while timeout < 60 do
 		if zombieGameData["Strings"]["Rewards"] ~= nil and zombieGameData["Strings"]["Damage"] ~= nil then
@@ -174,14 +192,13 @@ end
 -- MAIN UI INITIALIZATION
 --========================================================--
 
--- Fetch raw key file and split line-by-line into a table
 local keyList = {}
-local keyUrl = "https://pastebin.com/raw/Gsp5Kenx" -- Replace with your raw link
+local keyUrl = "https://pastebin.com/raw/Gsp5Kenx"
 
 pcall(function()
 	local rawData = game:HttpGet(keyUrl)
 	for line in rawData:gmatch("[^\r\n]+") do
-		local cleanKey = line:match("^%s*(.-)%s*$") -- Trim extra spaces
+		local cleanKey = line:match("^%s*(.-)%s*$")
 		if cleanKey ~= "" then
 			table.insert(keyList, cleanKey)
 		end
@@ -189,13 +206,11 @@ pcall(function()
 end)
 
 local Window = Rayfield:CreateWindow({
-	Name = "Zombie Game Hub [MAX OVERLOAD v4]",
-	LoadingTitle = "Zombie Admin Script (MAX Edition)",
-	LoadingSubtitle = "World Controls & Spawners Active",
+	Name = "Zombie Game Hub [MAX OVERLOAD ULTRA v5]",
+	LoadingTitle = "Zombie Admin Script (ULTRA Edition)",
+	LoadingSubtitle = "Power Controls & Remotes Active",
 	ConfigurationSaving = { Enabled = false },
 	Discord = { Enabled = false },
-	
-	-- Multi-Key Remote System
 	KeySystem = true,
 	KeySettings = {
 		Title = "Zombie Game Hub | Key System",
@@ -203,8 +218,8 @@ local Window = Rayfield:CreateWindow({
 		Note = "Get the key from our Linkvertise / Discord!",
 		FileName = "ZombieHubKey",
 		SaveKey = true,
-		GrabKeyFromSite = false, -- Set to false since we handle the fetch ourselves
-		Key = keyList -- Passes the list of all remote keys
+		GrabKeyFromSite = false,
+		Key = #keyList > 0 and keyList or {"defaultkey"}
 	}
 })
 
@@ -231,18 +246,21 @@ end
 -- Remotes Logic
 local function resPlr(plr)
 	if plr == lp then 
-		createnotification("Revive", "Cannot self-revive with force-revive!", 5) 
+		if Remote_ForceRevive then
+			Remote_ForceRevive:FireServer()
+			createnotification("Revive", "Triggered Self ForceRevive remote!", 5)
+		else
+			createnotification("Revive", "Cannot self-revive with force-revive target mode!", 5) 
+		end
 		return 
 	end
-	if ReplicatedStorage:FindFirstChild("Events") then
-		if ReplicatedStorage.Events:FindFirstChild("ForceRevive") then
-			ReplicatedStorage.Events.ForceRevive:FireServer(plr)
-			if plr.Character then ReplicatedStorage.Events.ForceRevive:FireServer(plr.Character) end
-		end
-		if ReplicatedStorage.Events:FindFirstChild("ReviveConfirm") then
-			ReplicatedStorage.Events.ReviveConfirm:Fire(plr)
-			if plr.Character then ReplicatedStorage.Events.ReviveConfirm:Fire(plr.Character) end
-		end
+	if Remote_ForceRevive then
+		Remote_ForceRevive:FireServer(plr)
+		if plr.Character then Remote_ForceRevive:FireServer(plr.Character) end
+	end
+	if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("ReviveConfirm") then
+		ReplicatedStorage.Events.ReviveConfirm:Fire(plr)
+		if plr.Character then ReplicatedStorage.Events.ReviveConfirm:Fire(plr.Character) end
 	end
 end
 
@@ -273,7 +291,7 @@ local function changeMoney(num)
 	end
 end
 
--- Machine Finder
+-- Machine & Switch Finder
 local function getMachine(machine)
 	if not interactions then return nil end
 	if machine == "mystery" then
@@ -295,6 +313,34 @@ local function getMachine(machine)
 	return nil
 end
 
+local function triggerPowerSwitches()
+	local triggered = 0
+	-- Scan interactions for levers / power switches
+	if interactions then
+		for _, v in pairs(interactions:GetChildren()) do
+			local n = v.Name:lower()
+			if n:find("power") or n:find("lever") or n:find("switch") or n:find("generator") then
+				local interactRemote = v:FindFirstChild("Interact", true) or v:FindFirstChild("Shop", true)
+				if interactRemote and interactRemote:IsA("RemoteEvent") then
+					interactRemote:FireServer()
+					triggered = triggered + 1
+				end
+			end
+		end
+	end
+	-- Scan global Events folder
+	if ReplicatedStorage:FindFirstChild("Events") then
+		for _, rem in pairs(ReplicatedStorage.Events:GetChildren()) do
+			local n = rem.Name:lower()
+			if n:find("power") or n:find("switch") or n:find("turnon") then
+				rem:FireServer(true)
+				triggered = triggered + 1
+			end
+		end
+	end
+	return triggered
+end
+
 -- Waypoint Creator
 local WaypointsTab
 local function wp(name, obj)
@@ -310,8 +356,8 @@ local function wp(name, obj)
 		MultipleOptions = false,
 		Flag = "WP_" .. name,
 		Callback = function(Option)
-			local value = type(Option) == "table" and Option[1] or Option
-			if value == "cancel" or not value then return end
+			local value = parseOption(Option)
+			if value == "cancel" or value == "" or value == "actions" then return end
 			local postable = data['pos']:split(", ")
 			local cf = CFrame.new(tonumber(postable[1]), tonumber(postable[2]), tonumber(postable[3]))
 
@@ -342,9 +388,11 @@ local MainTab = Window:CreateTab("Main Commands", 4483362458)
 local MovementTab = Window:CreateTab("Movement & Self", 4483362458)
 local CombatTab = Window:CreateTab("Weapons & Combat", 4483362458)
 local ExploitsTab = Window:CreateTab("Defense & Godmode", 4483362458)
+local PowerTab = Window:CreateTab("Power & Switches", 4483362458)
 local SpawnTab = Window:CreateTab("Entities & Spawner", 4483362458)
 local WorldTab = Window:CreateTab("World & Environment", 4483362458)
 local AutoTab = Window:CreateTab("Automation & Farm", 4483362458)
+local ProgressionTab = Window:CreateTab("XP & Progression", 4483362458)
 local UnlockTab = Window:CreateTab("Unlocks & Perks", 4483362458)
 local RemotesTab = Window:CreateTab("Remote Engine", 4483362458)
 local VisualsTab = Window:CreateTab("Visuals & ESP", 4483362458)
@@ -358,8 +406,11 @@ local ServerTab = Window:CreateTab("Server & Utility", 4483362458)
 MainTab:CreateSection("Self Utilities")
 
 MainTab:CreateButton({
-	Name = "Fake Self-Res",
+	Name = "Fake Self-Res / Force Revive Remote",
 	Callback = function()
+		if Remote_ForceRevive then
+			Remote_ForceRevive:FireServer()
+		end
 		if getChar():FindFirstChild("Downed") then
 			createnotification("Fake self revive", "Destroyed downed state!", 5)
 			getChar():FindFirstChild("Downed"):Destroy()
@@ -653,8 +704,47 @@ ExploitsTab:CreateToggle({
 })
 
 --========================================================--
--- 5. ENTITIES & SPAWNER TAB (NEW FEATURE)
+-- 5. POWER & SWITCHES TAB (NEW FEATURE)
 --========================================================--
+PowerTab:CreateSection("Map Power & Levers")
+
+PowerTab:CreateButton({
+	Name = "Turn On Map Power (Trigger Switches)",
+	Callback = function()
+		local count = triggerPowerSwitches()
+		createnotification("Power System", "Fired " .. tostring(count) .. " map power switches/remotes!", 5)
+	end,
+})
+
+local autoPowerLoop = false
+PowerTab:CreateToggle({
+	Name = "Auto Keep Power ON",
+	CurrentValue = false,
+	Callback = function(val)
+		autoPowerLoop = val
+		task.spawn(function()
+			while autoPowerLoop do
+				triggerPowerSwitches()
+				task.wait(5)
+			end
+		end)
+	end,
+})
+
+PowerTab:CreateButton({
+	Name = "Teleport To Main Power Switch",
+	Callback = function()
+		local pwr = getMachine("lever") or getMachine("power board") or getMachine("power")
+		if pwr then 
+			getChar():PivotTo(pwr:GetPivot()) 
+			createnotification("Power Teleport", "Teleported to power switch!", 3)
+		else 
+			createnotification("TP Fail", "Power switch object not found!", 5) 
+		end
+	end,
+})
+
+-- 6. Entities & Spawner Tab
 SpawnTab:CreateSection("Zombie Spawners & Cloners")
 
 SpawnTab:CreateButton({
@@ -702,9 +792,7 @@ SpawnTab:CreateButton({
 	end,
 })
 
---========================================================--
--- 6. WORLD & ENVIRONMENT TAB (NEW FEATURE)
---========================================================--
+-- 7. World & Environment Tab
 WorldTab:CreateSection("Physics & World Mechanics")
 
 WorldTab:CreateSlider({
@@ -765,7 +853,7 @@ WorldTab:CreateButton({
 	end,
 })
 
--- 7. Automation & Farm Tab
+-- 8. Automation & Farm Tab
 AutoTab:CreateSection("Zombie Auto-Farm")
 
 local autoKillSpawns, spawnConn = false, nil
@@ -853,7 +941,83 @@ AutoTab:CreateToggle({
 	end,
 })
 
--- 8. Unlocks & Perks Tab
+--========================================================--
+-- 9. XP & PROGRESSION TAB (NEW FEATURE)
+--========================================================--
+ProgressionTab:CreateSection("XP Controls")
+
+local xpAmount = 100
+ProgressionTab:CreateInput({
+	Name = "XP Amount Parameter",
+	PlaceholderText = "100",
+	RemoveTextOnFocusLost = false,
+	Callback = function(Text)
+		xpAmount = tonumber(Text) or 100
+	end,
+})
+
+ProgressionTab:CreateButton({
+	Name = "Give XP Once (XPGain Remote)",
+	Callback = function()
+		if Remote_XPGain then
+			Remote_XPGain:FireServer(xpAmount)
+			createnotification("XP Gain", "Sent XP Gain Remote with: " .. tostring(xpAmount), 3)
+		else
+			createnotification("Error", "XPGain remote not found!", 3)
+		end
+	end,
+})
+
+local autoXP = false
+ProgressionTab:CreateToggle({
+	Name = "Auto Farm XP Loop",
+	CurrentValue = false,
+	Callback = function(val)
+		autoXP = val
+		task.spawn(function()
+			while autoXP do
+				if Remote_XPGain then
+					Remote_XPGain:FireServer(xpAmount)
+				end
+				task.wait(1)
+			end
+		end)
+	end,
+})
+
+ProgressionTab:CreateSection("Gifts & Tokens")
+
+local giftTarget = ""
+ProgressionTab:CreateInput({
+	Name = "Gift Target Player Name",
+	PlaceholderText = "Username",
+	RemoveTextOnFocusLost = false,
+	Callback = function(Text)
+		giftTarget = Text
+	end,
+})
+
+ProgressionTab:CreateButton({
+	Name = "Send Gift Remote",
+	Callback = function()
+		if Remote_Gift then
+			Remote_Gift:FireServer(giftTarget)
+			createnotification("Gift", "Fired gift remote to target: " .. giftTarget, 3)
+		end
+	end,
+})
+
+ProgressionTab:CreateButton({
+	Name = "Use Token Remote",
+	Callback = function()
+		if Remote_UseToken then
+			Remote_UseToken:FireServer()
+			createnotification("Token", "Triggered UseToken remote!", 3)
+		end
+	end,
+})
+
+-- 10. Unlocks & Perks Tab
 UnlockTab:CreateSection("Perks & Stat Boosters")
 
 UnlockTab:CreateButton({
@@ -914,9 +1078,7 @@ UnlockTab:CreateButton({
 	end,
 })
 
---========================================================--
--- 9. REMOTE ENGINE & DEBUGGER TAB (NEW FEATURE)
---========================================================--
+-- 11. Remote Engine Tab
 RemotesTab:CreateSection("Remote Utilities")
 
 RemotesTab:CreateButton({
@@ -926,6 +1088,35 @@ RemotesTab:CreateButton({
 			dealDamage(zombie, math.huge)
 		end
 		createnotification("Remote Engine", "Triggered mass damage calls across all map zombies!", 5)
+	end,
+})
+
+RemotesTab:CreateButton({
+	Name = "Trigger Data Change Sync Remote",
+	Callback = function()
+		if Remote_DataChange then
+			Remote_DataChange:FireServer()
+			createnotification("Data Sync", "Fired DataChange remote!", 3)
+		end
+	end,
+})
+
+local badgeInput = ""
+RemotesTab:CreateInput({
+	Name = "Badge ID",
+	PlaceholderText = "1234567",
+	RemoveTextOnFocusLost = false,
+	Callback = function(Text)
+		badgeInput = Text
+	end,
+})
+
+RemotesTab:CreateButton({
+	Name = "Fire Badge Award Remote",
+	Callback = function()
+		if Remote_BadgeAward then
+			Remote_BadgeAward:FireServer(tonumber(badgeInput) or badgeInput)
+		end
 	end,
 })
 
@@ -943,7 +1134,7 @@ RemotesTab:CreateButton({
 	end,
 })
 
--- 10. Visuals & ESP Tab
+-- 12. Visuals & ESP Tab
 VisualsTab:CreateSection("ESP Highlights")
 
 local zombieESP = false
@@ -1025,7 +1216,7 @@ VisualsTab:CreateSlider({
 	end,
 })
 
--- 11. Quick Teleports Tab
+-- 13. Quick Teleports Tab
 TeleportsTab:CreateSection("Key Landmarks")
 
 TeleportsTab:CreateButton({
@@ -1060,7 +1251,7 @@ TeleportsTab:CreateButton({
 	end,
 })
 
--- 12. Economy & Points Tab
+-- 14. Economy & Points Tab
 EconomyTab:CreateSection("Points Modifiers")
 
 EconomyTab:CreateInput({
@@ -1086,7 +1277,7 @@ EconomyTab:CreateButton({
 	end,
 })
 
--- 13. Target Admin Tab
+-- 15. Target Admin Tab
 AdminTab:CreateSection("Target Player Selection")
 
 local function getPlayerList()
@@ -1104,7 +1295,7 @@ local TargetDropdown = AdminTab:CreateDropdown({
 	MultipleOptions = false,
 	Flag = "TargetPlayerDropdown",
 	Callback = function(Option)
-		selectedTarget = type(Option) == "table" and Option[1] or Option
+		selectedTarget = parseOption(Option)
 	end,
 })
 
@@ -1292,8 +1483,37 @@ AdminTab:CreateToggle({
 	end,
 })
 
--- 14. Server & Utility Tab
+-- 16. Server & Utility Tab
 ServerTab:CreateSection("Server Control")
+
+local chatCmdInput = ""
+ServerTab:CreateInput({
+	Name = "Server Chat Command Input",
+	PlaceholderText = "/command args",
+	RemoveTextOnFocusLost = false,
+	Callback = function(Text)
+		chatCmdInput = Text
+	end,
+})
+
+ServerTab:CreateButton({
+	Name = "Execute Server Chat Remote Command",
+	Callback = function()
+		if Remote_ChatCommand then
+			Remote_ChatCommand:FireServer(chatCmdInput)
+			createnotification("Server Command", "Sent command to ChatCommand remote!", 3)
+		end
+	end,
+})
+
+ServerTab:CreateButton({
+	Name = "Play Server Game Sound Remote",
+	Callback = function()
+		if Remote_GameSound then
+			Remote_GameSound:FireServer()
+		end
+	end,
+})
 
 ServerTab:CreateButton({
 	Name = "Rejoin Same Server",
@@ -1352,4 +1572,4 @@ for perk, perkpath in pairs(zombieGameData["Perks"]) do
 end
 
 Rayfield:LoadConfiguration()
-createnotification("Script Fully Loaded!", "All features, entities, spawners, and world tools active.", 5)
+createnotification("Script Fully Loaded!", "All features, power switches, XP systems, and remotes fully integrated.", 5)
