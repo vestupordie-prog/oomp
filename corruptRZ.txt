@@ -3955,13 +3955,25 @@ EconomyTab:CreateToggle({
 --========================================================--
 AdminTab:CreateSection("Player Selection")
 
-AdminTab:CreateDropdown({
+local function getPlayerList()
+	local list = {"All Players", "LocalPlayer (Me)"}
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= lp then table.insert(list, p.Name) end
+	end
+	return list
+end
+
+local TargetDropdown = AdminTab:CreateDropdown({
 	Name = "Select Target Player",
-	Options = {"All Players", "LocalPlayer (Me)"},
+	Options = getPlayerList(),
 	CurrentOption = {"All Players"},
 	MultipleOptions = false,
-	Callback = function(opt) selectedTarget = parseOption(opt) end,
+	Flag = "TargetPlayerDropdown",
+	Callback = function(Option)
+		selectedTarget = parseOption(Option)
+	end,
 })
+
 
 AdminTab:CreateButton({
 	Name = "Refresh Player Selection List",
