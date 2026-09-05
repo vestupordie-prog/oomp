@@ -4192,4 +4192,4 @@ LogsTab:CreateButton({
 	end,
 })
 
-createnotification("CorruptRZ v2", "Script loaded successfully with zero errors!", 5)
+createnotification("CorruptRZ Loaded", "Shoot a zombie once to attach!", 7)
