@@ -1,0 +1,1355 @@
+--// Rayfield Gen 2 Interface Setup (MAX OVERLOAD v4) \\--
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Notification Wrapper
+local function createnotification(title, content, duration)
+	Rayfield:Notify({
+		Title = title,
+		Content = content,
+		Duration = duration or 5,
+		Image = 4483362458
+	})
+end
+
+--// Services & Core Variables \\--
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+
+local lp = Players.LocalPlayer
+
+local function getChar()
+	return lp.Character or lp.CharacterAdded:Wait()
+end
+
+local zombieGameData = {
+	["Auto-Updater"] = false,
+	["Perks"] = {},
+	["Paths"] = {
+		["ShootGun"] = Lighting:WaitForChild("Hit_Object", 5),
+		["Damage"] = Lighting:WaitForChild("ETC", 5)
+	},
+	["Tasks"] = {},
+	["Barriers"] = {},
+	["Strings"] = {
+		["Damage"] = nil,
+		["Rewards"] = nil
+	},
+	["Dropdowns"] = {},
+	["Functions"] = {}
+}
+
+-- Loop Tracking
+local loopConnections = {}
+local function stoploop(name)
+	if loopConnections[name] then
+		loopConnections[name]:Disconnect()
+		loopConnections[name] = nil
+	end
+end
+
+-- Anti-cheat Bypass
+local function tpBypass(part)
+	if getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+		getChar():PivotTo(part.CFrame)
+	end
+end
+
+-- Helper for dynamic targeting
+local selectedTarget = "All Players"
+local function getPlayer(target)
+	local found = {}
+	if not target then return found end
+	if target == "All Players" then
+		return Players:GetPlayers()
+	elseif target == "LocalPlayer (Me)" then
+		return {lp}
+	else
+		for _, p in pairs(Players:GetPlayers()) do
+			if p.Name == target or p.DisplayName == target then
+				table.insert(found, p)
+			end
+		end
+	end
+	return found
+end
+
+--========================================================--
+-- HOOKMETAMETHOD & ADVANCED HOOKS BOOTSTRAPPER
+--========================================================--
+local noDamageToLocal = false
+local wallbangEnabled = false
+
+if hookmetamethod then
+	createnotification("Auto-Updater", "HOOKING REMOTES & RAYCASTS: Initializing engine overrides...", 8)
+	zombieGameData["Auto-Updater"] = true
+	
+	local damagerem = Lighting:WaitForChild("ETC", 10)
+	local oldNamecall
+	
+	oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+		local method = getnamecallmethod():lower()
+		local args = {...}
+		
+		-- Capture Remote Strings
+		if not checkcaller() and method:find("fire") and self == damagerem then
+			if args[1] and type(args[1]) == "table" and args[1][1] and args[1][3] then
+				local strArg = args[1][3]
+				if type(strArg) == "string" and not tonumber(strArg) then
+					if strArg:lower():find("rewards") then
+						rawset(zombieGameData["Strings"], "Rewards", strArg)
+					elseif strArg:lower():find("damage") then
+						rawset(zombieGameData["Strings"], "Damage", strArg)
+					end
+				end
+			end
+		end
+
+		-- Zombies Do No Damage
+		if noDamageToLocal and method:find("fire") and self == damagerem then
+			if args[1] and type(args[1]) == "table" then
+				local targetHum = args[1][1]
+				if getChar() and (targetHum == getChar() or (targetHum:IsA("Humanoid") and targetHum.Parent == getChar())) then
+					local dmgVal = args[1][2]
+					if type(dmgVal) == "number" and dmgVal > 0 then
+						return -- Block damage remote calls aimed at local player
+					end
+				end
+			end
+		end
+		
+		return oldNamecall(self, ...)
+	end)
+
+	-- Shoot Through Walls / Raycast Bypass
+	local oldRaycast
+	oldRaycast = hookfunction(Workspace.Raycast, function(self, origin, direction, params, ...)
+		if wallbangEnabled and not checkcaller() then
+			if not params then
+				params = RaycastParams.new()
+			end
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			
+			local ignoreTable = params.FilterDescendantsInstances or {}
+			table.insert(ignoreTable, Workspace:FindFirstChild("Map"))
+			table.insert(ignoreTable, Workspace:FindFirstChild("MapGeometry"))
+			table.insert(ignoreTable, Workspace:FindFirstChild("Structure"))
+			table.insert(ignoreTable, Workspace:FindFirstChild("Barriers"))
+			
+			params.FilterDescendantsInstances = ignoreTable
+		end
+		return oldRaycast(self, origin, direction, params, ...)
+	end)
+
+	-- Safe yield timeout
+	local timeout = 0
+	while timeout < 60 do
+		if zombieGameData["Strings"]["Rewards"] ~= nil and zombieGameData["Strings"]["Damage"] ~= nil then
+			break
+		end
+		task.wait(0.1)
+		timeout = timeout + 1
+	end
+
+	if zombieGameData["Strings"]["Rewards"] and zombieGameData["Strings"]["Damage"] then
+		createnotification("Auto-Updater", "Keys captured successfully! Loading UI...", 5)
+	else
+		createnotification("Auto-Updater", "Capture timed out. Applied fallback keys.", 5)
+		zombieGameData["Strings"]["Rewards"] = zombieGameData["Strings"]["Rewards"] or "Rewards8\240\159\144\153"
+		zombieGameData["Strings"]["Damage"] = zombieGameData["Strings"]["Damage"] or "Damage5\240\159\144\153"
+	end
+else
+	createnotification("Auto-Updater", "Executor lacks hookmetamethod! Fallbacks active.", 5)
+	zombieGameData["Strings"]["Rewards"] = "Rewards8\240\159\144\153"
+	zombieGameData["Strings"]["Damage"] = "Damage5\240\159\144\153"
+	task.wait(1)
+end
+
+--========================================================--
+-- MAIN UI INITIALIZATION
+--========================================================--
+
+-- Fetch raw key file and split line-by-line into a table
+local keyList = {}
+local keyUrl = "https://pastebin.com/raw/Gsp5Kenx" -- Replace with your raw link
+
+pcall(function()
+	local rawData = game:HttpGet(keyUrl)
+	for line in rawData:gmatch("[^\r\n]+") do
+		local cleanKey = line:match("^%s*(.-)%s*$") -- Trim extra spaces
+		if cleanKey ~= "" then
+			table.insert(keyList, cleanKey)
+		end
+	end
+end)
+
+local Window = Rayfield:CreateWindow({
+	Name = "Zombie Game Hub [MAX OVERLOAD v4]",
+	LoadingTitle = "Zombie Admin Script (MAX Edition)",
+	LoadingSubtitle = "World Controls & Spawners Active",
+	ConfigurationSaving = { Enabled = false },
+	Discord = { Enabled = false },
+	
+	-- Multi-Key Remote System
+	KeySystem = true,
+	KeySettings = {
+		Title = "Zombie Game Hub | Key System",
+		Subtitle = "Key System Required",
+		Note = "Get the key from our Linkvertise / Discord!",
+		FileName = "ZombieHubKey",
+		SaveKey = true,
+		GrabKeyFromSite = false, -- Set to false since we handle the fetch ourselves
+		Key = keyList -- Passes the list of all remote keys
+	}
+})
+
+-- Gather Barriers
+local interactions = Workspace:FindFirstChild("Interactions")
+if interactions then
+	for _, v in pairs(interactions:GetChildren()) do
+		if v.Name:lower():find("barrier ") then
+			local shop = v:FindFirstChild("Shop")
+			if shop and shop:FindFirstChild("Interact") then
+				table.insert(zombieGameData["Barriers"], {
+					["Remote"] = shop.Interact,
+					["tp"] = v
+				})
+			end
+		end
+	end
+end
+
+zombieGameData["zombies"] = function() 
+	return Workspace:FindFirstChild("Zombies") and Workspace.Zombies:GetChildren() or {} 
+end
+
+-- Remotes Logic
+local function resPlr(plr)
+	if plr == lp then 
+		createnotification("Revive", "Cannot self-revive with force-revive!", 5) 
+		return 
+	end
+	if ReplicatedStorage:FindFirstChild("Events") then
+		if ReplicatedStorage.Events:FindFirstChild("ForceRevive") then
+			ReplicatedStorage.Events.ForceRevive:FireServer(plr)
+			if plr.Character then ReplicatedStorage.Events.ForceRevive:FireServer(plr.Character) end
+		end
+		if ReplicatedStorage.Events:FindFirstChild("ReviveConfirm") then
+			ReplicatedStorage.Events.ReviveConfirm:Fire(plr)
+			if plr.Character then ReplicatedStorage.Events.ReviveConfirm:Fire(plr.Character) end
+		end
+	end
+end
+
+local function dealDamage(thing, dmg)
+	if not thing then return end
+	local hum = thing:FindFirstChild("Humanoid") or thing
+	if zombieGameData["Paths"]["Damage"] then
+		local args = {
+			{
+				hum,
+				dmg,
+				zombieGameData["Strings"]["Damage"],
+				false, false, false,
+				[8] = Vector3.new(-15.9, -4.4, 98.6),
+				[9] = { HitS = 0, ConfirmedHit = 1 }
+			}
+		}
+		zombieGameData["Paths"]["Damage"]:FireServer(unpack(args))
+	end
+end
+
+local function changeMoney(num)
+	if zombieGameData["Paths"]["Damage"] then
+		local args = {
+			{ 0, num, zombieGameData["Strings"]["Rewards"] }
+		}
+		zombieGameData["Paths"]["Damage"]:FireServer(unpack(args))
+	end
+end
+
+-- Machine Finder
+local function getMachine(machine)
+	if not interactions then return nil end
+	if machine == "mystery" then
+		local box = interactions:FindFirstChild("Mystery")
+		return box and box:FindFirstChild("Shop") or nil
+	end
+	for _, v in pairs(interactions:GetChildren()) do
+		if v.Name:lower():find(machine:lower()) then
+			local model = v:FindFirstChild("Shop Place") or v:FindFirstChild("Shop")
+			if not model then continue end
+			if model:IsA("Model") or model:IsA("BasePart") then
+				model = model:FindFirstChild("Shop") or model
+				if model:IsA("Model") and model:GetPivot().Y > 9000 then continue end
+				if model:IsA("BasePart") and model.Position.Y > 9000 then continue end
+				return model
+			end
+		end
+	end
+	return nil
+end
+
+-- Waypoint Creator
+local WaypointsTab
+local function wp(name, obj)
+	if not name or not obj or not WaypointsTab then return end
+	local pos = obj:IsA("Model") and obj:GetPivot().Position or obj.Position
+	local posStr = pos.X..", "..pos.Y..", "..pos.Z
+	local data = { ["pos"] = posStr }
+
+	zombieGameData["Dropdowns"][name] = WaypointsTab:CreateDropdown({
+		Name = "WP: " .. name,
+		Options = {"teleport to", "cancel", "loop tp", "unloop tp", "anticheat goto"},
+		CurrentOption = {"actions"},
+		MultipleOptions = false,
+		Flag = "WP_" .. name,
+		Callback = function(Option)
+			local value = type(Option) == "table" and Option[1] or Option
+			if value == "cancel" or not value then return end
+			local postable = data['pos']:split(", ")
+			local cf = CFrame.new(tonumber(postable[1]), tonumber(postable[2]), tonumber(postable[3]))
+
+			if value == "teleport to" then
+				getChar():PivotTo(cf)
+			elseif value == "loop tp" then
+				stoploop("looptping")
+				loopConnections["looptping"] = RunService.Heartbeat:Connect(function()
+					getChar():PivotTo(cf)
+				end)
+			elseif value == "unloop tp" then
+				stoploop("looptping")
+			elseif value == "anticheat goto" then
+				local part = Instance.new("Part", Workspace)
+				part.Anchored = true
+				part.Transparency = 1
+				part.CanCollide = false
+				part.CFrame = cf
+				tpBypass(part)
+				part:Destroy()
+			end
+		end,
+	})
+end
+
+-- UI Tabs
+local MainTab = Window:CreateTab("Main Commands", 4483362458)
+local MovementTab = Window:CreateTab("Movement & Self", 4483362458)
+local CombatTab = Window:CreateTab("Weapons & Combat", 4483362458)
+local ExploitsTab = Window:CreateTab("Defense & Godmode", 4483362458)
+local SpawnTab = Window:CreateTab("Entities & Spawner", 4483362458)
+local WorldTab = Window:CreateTab("World & Environment", 4483362458)
+local AutoTab = Window:CreateTab("Automation & Farm", 4483362458)
+local UnlockTab = Window:CreateTab("Unlocks & Perks", 4483362458)
+local RemotesTab = Window:CreateTab("Remote Engine", 4483362458)
+local VisualsTab = Window:CreateTab("Visuals & ESP", 4483362458)
+WaypointsTab = Window:CreateTab("Waypoints", 4483362458)
+local TeleportsTab = Window:CreateTab("Quick Teleports", 4483362458)
+local EconomyTab = Window:CreateTab("Economy & Points", 4483362458)
+local AdminTab = Window:CreateTab("Target Admin", 4483362458)
+local ServerTab = Window:CreateTab("Server & Utility", 4483362458)
+
+-- 1. Main Commands Tab
+MainTab:CreateSection("Self Utilities")
+
+MainTab:CreateButton({
+	Name = "Fake Self-Res",
+	Callback = function()
+		if getChar():FindFirstChild("Downed") then
+			createnotification("Fake self revive", "Destroyed downed state!", 5)
+			getChar():FindFirstChild("Downed"):Destroy()
+			dealDamage(getChar(), -math.huge)
+		end
+	end,
+})
+
+MainTab:CreateButton({
+	Name = "Remove Debounces (Jump & Fall)",
+	Callback = function()
+		local jump = lp.PlayerGui:FindFirstChild("JumpDebounce")
+		local fall = lp.PlayerGui:FindFirstChild("Fall Damage")
+		if jump then jump:Destroy() end
+		if fall then fall:Destroy() end
+		createnotification("Movement", "Removed fall damage & jump debounces!", 5)
+	end,
+})
+
+MainTab:CreateSection("Quick Auras")
+local zombieAura, zomAuraDeb = nil, tick()
+MainTab:CreateToggle({
+	Name = "Zombie Kill Aura (20 Studs)",
+	CurrentValue = false,
+	Callback = function(val)
+		if val then
+			zombieAura = RunService.Heartbeat:Connect(function()
+				if (tick() - zomAuraDeb) < 0.4 then return end
+				zomAuraDeb = tick()
+				for _, zombie in pairs(zombieGameData["zombies"]()) do
+					if (getChar():GetPivot().Position - zombie:GetPivot().Position).Magnitude < 20 then
+						task.spawn(function() dealDamage(zombie, math.huge) end)
+					end
+				end
+			end)
+		else
+			if zombieAura then zombieAura:Disconnect() zombieAura = nil end
+		end
+	end,
+})
+
+-- 2. Movement & Self Tab
+MovementTab:CreateSection("Character Modifiers")
+
+MovementTab:CreateSlider({
+	Name = "WalkSpeed Multiplier",
+	Range = {16, 250},
+	Increment = 1,
+	Suffix = " Speed",
+	CurrentValue = 16,
+	Flag = "WalkSpeedSlider",
+	Callback = function(Value)
+		if getChar():FindFirstChildOfClass("Humanoid") then
+			getChar():FindFirstChildOfClass("Humanoid").WalkSpeed = Value
+		end
+	end,
+})
+
+MovementTab:CreateSlider({
+	Name = "JumpPower Multiplier",
+	Range = {50, 300},
+	Increment = 5,
+	Suffix = " Power",
+	CurrentValue = 50,
+	Flag = "JumpPowerSlider",
+	Callback = function(Value)
+		if getChar():FindFirstChildOfClass("Humanoid") then
+			local hum = getChar():FindFirstChildOfClass("Humanoid")
+			hum.UseJumpPower = true
+			hum.JumpPower = Value
+		end
+	end,
+})
+
+local infSprint = false
+MovementTab:CreateToggle({
+	Name = "Infinite Sprint / No Stamina Drain",
+	CurrentValue = false,
+	Callback = function(val)
+		infSprint = val
+		task.spawn(function()
+			while infSprint do
+				task.wait(0.2)
+				if getChar():FindFirstChild("Stamina") then
+					getChar().Stamina.Value = 100
+				end
+			end
+		end)
+	end,
+})
+
+local noclip = false
+MovementTab:CreateToggle({
+	Name = "Noclip (Walk Through Walls)",
+	CurrentValue = false,
+	Callback = function(val)
+		noclip = val
+		if noclip then
+			loopConnections["noclip"] = RunService.Stepped:Connect(function()
+				if getChar() then
+					for _, part in pairs(getChar():GetDescendants()) do
+						if part:IsA("BasePart") then part.CanCollide = false end
+					end
+				end
+			end)
+		else
+			stoploop("noclip")
+		end
+	end,
+})
+
+local flyEnabled, flySpeed = false, 50
+MovementTab:CreateToggle({
+	Name = "CFrame Fly Mode",
+	CurrentValue = false,
+	Callback = function(val)
+		flyEnabled = val
+		if flyEnabled then
+			loopConnections["fly"] = RunService.RenderStepped:Connect(function(dt)
+				if getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+					local hrp = getChar().HumanoidRootPart
+					local cam = Workspace.CurrentCamera
+					local moveDir = Vector3.new()
+					if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+					if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+					if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+					if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
+					if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+					if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+					hrp.CFrame = hrp.CFrame + (moveDir * (flySpeed * dt))
+					hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+				end
+			end)
+		else
+			stoploop("fly")
+		end
+	end,
+})
+
+MovementTab:CreateSlider({
+	Name = "Fly Speed",
+	Range = {10, 200},
+	Increment = 5,
+	Suffix = " Speed",
+	CurrentValue = 50,
+	Callback = function(Value) flySpeed = Value end,
+})
+
+-- 3. Weapons & Combat Tab
+CombatTab:CreateSection("Gun Engine Hooks")
+
+CombatTab:CreateToggle({
+	Name = "Shoot Through Walls (Raycast Bypass)",
+	CurrentValue = false,
+	Callback = function(val)
+		wallbangEnabled = val
+		createnotification("Raycast Hook", val and "Wallbang Active: Bullets penetrate map!" or "Wallbang Disabled.", 3)
+	end,
+})
+
+CombatTab:CreateButton({
+	Name = "Remove Weapon Recoil & Spread",
+	Callback = function()
+		for _, v in pairs(getgc()) do
+			if type(v) == "function" then
+				local name = getinfo(v).name:lower()
+				if name:find("recoil") or name:find("spread") or name:find("cooldown") or name:find("firewait") then
+					hookfunction(v, function() return end)
+				end
+			end
+		end
+		createnotification("Weapons", "Recoil and Spread completely nulled!", 5)
+	end,
+})
+
+local infAmmo = false
+CombatTab:CreateToggle({
+	Name = "Infinite Ammo & Clip Loop",
+	CurrentValue = false,
+	Callback = function(val)
+		infAmmo = val
+		task.spawn(function()
+			while infAmmo do
+				task.wait(0.2)
+				for _, v in pairs(getgc(true)) do
+					if type(v) == "table" and (rawget(v, "Ammo") or rawget(v, "Clip")) then
+						rawset(v, "Ammo", 999)
+						rawset(v, "Clip", 999)
+					end
+				end
+			end
+		end)
+	end,
+})
+
+local silentAim = false
+CombatTab:CreateToggle({
+	Name = "Snap Gun Direction to Zombie Heads",
+	CurrentValue = false,
+	Callback = function(val)
+		silentAim = val
+		if silentAim then
+			loopConnections["silentaim"] = RunService.RenderStepped:Connect(function()
+				local closestZ, shortestDist = nil, math.huge
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z and z:FindFirstChild("Head") and getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+						local dist = (z.Head.Position - getChar().HumanoidRootPart.Position).Magnitude
+						if dist < shortestDist then
+							shortestDist = dist
+							closestZ = z
+						end
+					end
+				end
+				if closestZ and closestZ:FindFirstChild("Head") then
+					Workspace.CurrentCamera.CFrame = CFrame.new(Workspace.CurrentCamera.CFrame.Position, closestZ.Head.Position)
+				end
+			end)
+		else
+			stoploop("silentaim")
+		end
+	end,
+})
+
+-- 4. Defense & Godmode Tab
+ExploitsTab:CreateSection("Damage & AI Defense")
+
+local godmodeLoop = false
+ExploitsTab:CreateToggle({
+	Name = "Godmode (Local Health Decay Prevention)",
+	CurrentValue = false,
+	Callback = function(val)
+		godmodeLoop = val
+		task.spawn(function()
+			while godmodeLoop do
+				task.wait(0.2)
+				if getChar() then
+					dealDamage(getChar(), -999999)
+					if getChar():FindFirstChildOfClass("Humanoid") then
+						local h = getChar():FindFirstChildOfClass("Humanoid")
+						h.Health = h.MaxHealth
+					end
+				end
+			end
+		end)
+	end,
+})
+
+ExploitsTab:CreateToggle({
+	Name = "Zombies Do No Damage (Remote Hook)",
+	CurrentValue = false,
+	Callback = function(val)
+		noDamageToLocal = val
+		createnotification("Damage Hook", val and "Zombie damage calls blocked!" or "Zombie damage restored.", 3)
+	end,
+})
+
+local dumbZombies = false
+ExploitsTab:CreateToggle({
+	Name = "Dumb Zombies (Disable Pathfinding/AI)",
+	CurrentValue = false,
+	Callback = function(val)
+		dumbZombies = val
+		task.spawn(function()
+			while dumbZombies do
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z and z:FindFirstChildOfClass("Humanoid") then
+						local hum = z:FindFirstChildOfClass("Humanoid")
+						hum:ChangeState(Enum.HumanoidStateType.Physics)
+						hum.WalkSpeed = 0
+						if z:FindFirstChild("HumanoidRootPart") then
+							z.HumanoidRootPart.Anchored = true
+						end
+					end
+				end
+				task.wait(1)
+			end
+			if not dumbZombies then
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z and z:FindFirstChildOfClass("Humanoid") then
+						local hum = z:FindFirstChildOfClass("Humanoid")
+						hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+						hum.WalkSpeed = 16
+						if z:FindFirstChild("HumanoidRootPart") then
+							z.HumanoidRootPart.Anchored = false
+						end
+					end
+				end
+			end
+		end)
+	end,
+})
+
+--========================================================--
+-- 5. ENTITIES & SPAWNER TAB (NEW FEATURE)
+--========================================================--
+SpawnTab:CreateSection("Zombie Spawners & Cloners")
+
+SpawnTab:CreateButton({
+	Name = "Spawn Clone Zombie At Position",
+	Callback = function()
+		local zombies = zombieGameData["zombies"]()
+		if #zombies > 0 and getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+			local original = zombies[1]
+			local clone = original:Clone()
+			clone.Parent = Workspace:FindFirstChild("Zombies") or Workspace
+			clone:PivotTo(getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, -8))
+			createnotification("Spawner", "Cloned zombie in front of local player!", 3)
+		else
+			createnotification("Spawner Fail", "No existing zombies found to clone.", 3)
+		end
+	end,
+})
+
+SpawnTab:CreateButton({
+	Name = "Teleport All Active Zombies To Me",
+	Callback = function()
+		if getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+			local targetCF = getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, -5)
+			for _, z in pairs(zombieGameData["zombies"]()) do
+				if z and z:FindFirstChild("HumanoidRootPart") then
+					z.HumanoidRootPart.CFrame = targetCF
+				end
+			end
+			createnotification("Teleport", "Brought all active zombies to your position!", 3)
+		end
+	end,
+})
+
+SpawnTab:CreateButton({
+	Name = "Force Trigger Game Spawn Remote",
+	Callback = function()
+		if ReplicatedStorage:FindFirstChild("Events") then
+			for _, remote in pairs(ReplicatedStorage.Events:GetChildren()) do
+				if remote.Name:lower():find("spawn") or remote.Name:lower():find("wave") then
+					remote:FireServer()
+				end
+			end
+			createnotification("Spawner", "Fired game spawn events!", 3)
+		end
+	end,
+})
+
+--========================================================--
+-- 6. WORLD & ENVIRONMENT TAB (NEW FEATURE)
+--========================================================--
+WorldTab:CreateSection("Physics & World Mechanics")
+
+WorldTab:CreateSlider({
+	Name = "World Gravity Modifier",
+	Range = {0, 196},
+	Increment = 1,
+	Suffix = " Grav",
+	CurrentValue = 196,
+	Callback = function(Value)
+		Workspace.Gravity = Value
+	end,
+})
+
+WorldTab:CreateSection("Atmosphere & Lighting")
+
+WorldTab:CreateSlider({
+	Name = "Time of Day (Clock)",
+	Range = {0, 24},
+	Increment = 0.5,
+	Suffix = " Hrs",
+	CurrentValue = 14,
+	Callback = function(Value)
+		Lighting.ClockTime = Value
+	end,
+})
+
+WorldTab:CreateButton({
+	Name = "Set Apocalyptic Blood Sky Visuals",
+	Callback = function()
+		Lighting.Ambient = Color3.fromRGB(150, 0, 0)
+		Lighting.OutdoorAmbient = Color3.fromRGB(100, 0, 0)
+		Lighting.FogColor = Color3.fromRGB(80, 0, 0)
+		Lighting.FogEnd = 300
+		createnotification("World", "Applied custom Blood Sky atmosphere!", 3)
+	end,
+})
+
+WorldTab:CreateButton({
+	Name = "Clear Fog & Atmosphere",
+	Callback = function()
+		Lighting.FogEnd = 100000
+		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+		createnotification("World", "Cleared environmental fog!", 3)
+	end,
+})
+
+WorldTab:CreateSection("Map Destruction")
+
+WorldTab:CreateButton({
+	Name = "Locally Destroy All Barrier Walls",
+	Callback = function()
+		for _, barrierData in pairs(zombieGameData["Barriers"]) do
+			if barrierData["tp"] then
+				barrierData["tp"]:Destroy()
+			end
+		end
+		createnotification("World", "Destroyed barrier geometry locally!", 3)
+	end,
+})
+
+-- 7. Automation & Farm Tab
+AutoTab:CreateSection("Zombie Auto-Farm")
+
+local autoKillSpawns, spawnConn = false, nil
+AutoTab:CreateToggle({
+	Name = "Auto-Insta Kill Zombies On Spawn",
+	CurrentValue = false,
+	Callback = function(val)
+		autoKillSpawns = val
+		if autoKillSpawns then
+			local zFolder = Workspace:FindFirstChild("Zombies")
+			if zFolder then
+				spawnConn = zFolder.ChildAdded:Connect(function(child)
+					task.wait(0.1)
+					dealDamage(child, math.huge)
+				end)
+			end
+		else
+			if spawnConn then spawnConn:Disconnect() spawnConn = nil end
+		end
+	end,
+})
+
+local zombieMagnet = false
+AutoTab:CreateToggle({
+	Name = "Zombie Magnet (Bring All Zombies to Front)",
+	CurrentValue = false,
+	Callback = function(val)
+		zombieMagnet = val
+		task.spawn(function()
+			while zombieMagnet do
+				if getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+					local targetPos = getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, -5)
+					for _, z in pairs(zombieGameData["zombies"]()) do
+						if z and z:FindFirstChild("HumanoidRootPart") then
+							z.HumanoidRootPart.CFrame = targetPos
+						end
+					end
+				end
+				task.wait(0.1)
+			end
+		end)
+	end,
+})
+
+AutoTab:CreateSection("Board & Drop Automation")
+
+local autoBarriers = false
+AutoTab:CreateToggle({
+	Name = "Auto-Repair Map Barriers",
+	CurrentValue = false,
+	Callback = function(val)
+		autoBarriers = val
+		task.spawn(function()
+			while autoBarriers do
+				task.wait(1)
+				for _, barrierData in pairs(zombieGameData["Barriers"]) do
+					if barrierData["Remote"] then
+						barrierData["Remote"]:FireServer()
+					end
+				end
+			end
+		end)
+	end,
+})
+
+local autoPowerups = false
+AutoTab:CreateToggle({
+	Name = "Auto Teleport Drops / Powerups to Me",
+	CurrentValue = false,
+	Callback = function(val)
+		autoPowerups = val
+		task.spawn(function()
+			while autoPowerups do
+				task.wait(0.5)
+				local drops = Workspace:FindFirstChild("Powerups") or Workspace:FindFirstChild("Drops")
+				if drops and getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+					for _, d in pairs(drops:GetChildren()) do
+						if d:IsA("BasePart") or d:IsA("Model") then
+							d:PivotTo(getChar().HumanoidRootPart.CFrame)
+						end
+					end
+				end
+			end
+		end)
+	end,
+})
+
+-- 8. Unlocks & Perks Tab
+UnlockTab:CreateSection("Perks & Stat Boosters")
+
+UnlockTab:CreateButton({
+	Name = "Give All Perks & Max Modifier Slots",
+	Callback = function()
+		local perkList = {"Juggernog", "Speed Cola", "Double Tap", "Quick Revive", "Stamin-Up", "Deadshot", "Mule Kick", "Electric Cherry"}
+		for _, perk in pairs(perkList) do
+			local machine = getMachine(perk)
+			if machine and machine:FindFirstChild("Interact") then
+				machine.Interact:FireServer()
+			elseif ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("GivePerk") then
+				ReplicatedStorage.Events.GivePerk:FireServer(perk)
+			end
+		end
+		createnotification("Perks", "Attempted to grant all map perks and max slots!", 5)
+	end,
+})
+
+UnlockTab:CreateSection("Weapon & Inventory Unlocks")
+
+UnlockTab:CreateButton({
+	Name = "Give All Guns / Instant Unlock",
+	Callback = function()
+		local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons") or ReplicatedStorage:FindFirstChild("Guns")
+		if weaponsFolder then
+			for _, gun in pairs(weaponsFolder:GetChildren()) do
+				if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("GiveWeapon") then
+					ReplicatedStorage.Events.GiveWeapon:FireServer(gun.Name)
+				elseif ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("BuyGun") then
+					ReplicatedStorage.Events.BuyGun:FireServer(gun.Name, 0)
+				end
+			end
+			createnotification("Weapons", "Iterated gun unlock events!", 5)
+		else
+			createnotification("Unlock Fail", "Weapons storage folder not located.", 5)
+		end
+	end,
+})
+
+UnlockTab:CreateSection("Achievements & Milestones")
+
+UnlockTab:CreateButton({
+	Name = "Unlock All Achievements & Milestones",
+	Callback = function()
+		local count = 0
+		if ReplicatedStorage:FindFirstChild("Events") then
+			for _, ev in pairs(ReplicatedStorage.Events:GetChildren()) do
+				local n = ev.Name:lower()
+				if n:find("achievement") or n:find("milestone") or n:find("claim") or n:find("reward") then
+					for i = 1, 50 do
+						ev:FireServer(i)
+					end
+					count = count + 1
+				end
+			end
+		end
+		createnotification("Achievements", "Fired " .. tostring(count) .. " reward/achievement events!", 5)
+	end,
+})
+
+--========================================================--
+-- 9. REMOTE ENGINE & DEBUGGER TAB (NEW FEATURE)
+--========================================================--
+RemotesTab:CreateSection("Remote Utilities")
+
+RemotesTab:CreateButton({
+	Name = "Nuke Map (Fire All Damage Remotes)",
+	Callback = function()
+		for _, zombie in pairs(zombieGameData["zombies"]()) do
+			dealDamage(zombie, math.huge)
+		end
+		createnotification("Remote Engine", "Triggered mass damage calls across all map zombies!", 5)
+	end,
+})
+
+RemotesTab:CreateButton({
+	Name = "Log All Replicated Remotes to Console",
+	Callback = function()
+		local total = 0
+		for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+			if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+				print("[REMOTE DISCOVERED]: " .. v:GetFullName())
+				total = total + 1
+			end
+		end
+		createnotification("Remote Logger", "Logged " .. tostring(total) .. " remotes to F9 console!", 5)
+	end,
+})
+
+-- 10. Visuals & ESP Tab
+VisualsTab:CreateSection("ESP Highlights")
+
+local zombieESP = false
+VisualsTab:CreateToggle({
+	Name = "Zombie ESP Highlights",
+	CurrentValue = false,
+	Callback = function(val)
+		zombieESP = val
+		task.spawn(function()
+			while zombieESP do
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z and not z:FindFirstChild("ZombHL") then
+						local hl = Instance.new("Highlight")
+						hl.Name = "ZombHL"
+						hl.FillColor = Color3.fromRGB(255, 30, 30)
+						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+						hl.Parent = z
+					end
+				end
+				task.wait(1)
+			end
+			if not zombieESP then
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z:FindFirstChild("ZombHL") then z.ZombHL:Destroy() end
+				end
+			end
+		end)
+	end,
+})
+
+local playerESP = false
+VisualsTab:CreateToggle({
+	Name = "Player ESP Highlights",
+	CurrentValue = false,
+	Callback = function(val)
+		playerESP = val
+		task.spawn(function()
+			while playerESP do
+				for _, p in pairs(Players:GetPlayers()) do
+					if p ~= lp and p.Character and not p.Character:FindFirstChild("PlrHL") then
+						local hl = Instance.new("Highlight")
+						hl.Name = "PlrHL"
+						hl.FillColor = Color3.fromRGB(30, 255, 30)
+						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+						hl.Parent = p.Character
+					end
+				end
+				task.wait(1)
+			end
+			if not playerESP then
+				for _, p in pairs(Players:GetPlayers()) do
+					if p.Character and p.Character:FindFirstChild("PlrHL") then p.Character.PlrHL:Destroy() end
+				end
+			end
+		end)
+	end,
+})
+
+VisualsTab:CreateSection("Lighting & Field of View")
+
+VisualsTab:CreateButton({
+	Name = "Full Bright & Remove Fog",
+	Callback = function()
+		Lighting.Brightness = 2
+		Lighting.ClockTime = 14
+		Lighting.FogEnd = 100000
+		Lighting.GlobalShadows = false
+	end,
+})
+
+VisualsTab:CreateSlider({
+	Name = "Camera Field Of View (FOV)",
+	Range = {70, 120},
+	Increment = 1,
+	Suffix = " Deg",
+	CurrentValue = 70,
+	Callback = function(Value)
+		Workspace.CurrentCamera.FieldOfView = Value
+	end,
+})
+
+-- 11. Quick Teleports Tab
+TeleportsTab:CreateSection("Key Landmarks")
+
+TeleportsTab:CreateButton({
+	Name = "Teleport to Pack-A-Punch",
+	Callback = function()
+		local pap = getMachine("pack a punch")
+		if pap then getChar():PivotTo(pap:GetPivot()) else createnotification("TP Fail", "PAP Machine not found!", 5) end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Teleport to Mystery Box",
+	Callback = function()
+		local box = getMachine("mystery")
+		if box then getChar():PivotTo(box:GetPivot()) else createnotification("TP Fail", "Box not found!", 5) end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Teleport to Power Switch",
+	Callback = function()
+		local pwr = getMachine("lever") or getMachine("power board")
+		if pwr then getChar():PivotTo(pwr:GetPivot()) else createnotification("TP Fail", "Power not found!", 5) end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Teleport to Juggernog",
+	Callback = function()
+		local jugg = getMachine("jugg")
+		if jugg then getChar():PivotTo(jugg:GetPivot()) else createnotification("TP Fail", "Juggernog not found!", 5) end
+	end,
+})
+
+-- 12. Economy & Points Tab
+EconomyTab:CreateSection("Points Modifiers")
+
+EconomyTab:CreateInput({
+	Name = "Add Custom Money Amount",
+	PlaceholderText = "50000",
+	RemoveTextOnFocusLost = true,
+	Callback = function(Text)
+		changeMoney(tonumber(Text) or 50000)
+	end,
+})
+
+EconomyTab:CreateButton({
+	Name = "Give 100,000 Points Instantly",
+	Callback = function()
+		changeMoney(100000)
+	end,
+})
+
+EconomyTab:CreateButton({
+	Name = "Give 1,000,000 Points Instantly",
+	Callback = function()
+		changeMoney(1000000)
+	end,
+})
+
+-- 13. Target Admin Tab
+AdminTab:CreateSection("Target Player Selection")
+
+local function getPlayerList()
+	local list = {"All Players", "LocalPlayer (Me)"}
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= lp then table.insert(list, p.Name) end
+	end
+	return list
+end
+
+local TargetDropdown = AdminTab:CreateDropdown({
+	Name = "Select Target",
+	Options = getPlayerList(),
+	CurrentOption = {"All Players"},
+	MultipleOptions = false,
+	Flag = "TargetPlayerDropdown",
+	Callback = function(Option)
+		selectedTarget = type(Option) == "table" and Option[1] or Option
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Refresh Player List",
+	Callback = function()
+		TargetDropdown:Refresh(getPlayerList())
+		createnotification("Admin", "Player dropdown refreshed!", 3)
+	end,
+})
+
+Players.PlayerAdded:Connect(function() TargetDropdown:Refresh(getPlayerList()) end)
+Players.PlayerRemoving:Connect(function() TargetDropdown:Refresh(getPlayerList()) end)
+
+AdminTab:CreateSection("Direct Combat & Health Actions")
+
+AdminTab:CreateButton({ 
+	Name = "Revive Target", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do resPlr(v) end 
+	end 
+})
+
+AdminTab:CreateButton({ 
+	Name = "Kill Target", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do 
+			if v.Character then dealDamage(v.Character, math.huge) end 
+		end 
+	end 
+})
+
+AdminTab:CreateButton({ 
+	Name = "Godmode Target (Health Heal Loop)", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do 
+			if v.Character then dealDamage(v.Character, -math.huge) end 
+		end 
+	end 
+})
+
+local loopKillToggle = false
+AdminTab:CreateToggle({
+	Name = "Loop Kill Target",
+	CurrentValue = false,
+	Callback = function(val)
+		loopKillToggle = val
+		task.spawn(function()
+			while loopKillToggle do
+				for _, v in pairs(getPlayer(selectedTarget)) do
+					if v.Character then dealDamage(v.Character, math.huge) end
+				end
+				task.wait(0.5)
+			end
+		end)
+	end,
+})
+
+AdminTab:CreateSection("Teleporting & Movement Controls")
+
+AdminTab:CreateButton({ 
+	Name = "Teleport To Target", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do 
+			if v ~= lp and v.Character then 
+				getChar():PivotTo(v.Character:GetPivot()) 
+				break 
+			end 
+		end 
+	end 
+})
+
+AdminTab:CreateButton({ 
+	Name = "Teleport Target To Me", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do 
+			if v ~= lp and v.Character then 
+				v.Character:PivotTo(getChar():GetPivot()) 
+			end 
+		end 
+	end 
+})
+
+AdminTab:CreateButton({ 
+	Name = "Teleport Behind Target", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do 
+			if v ~= lp and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then 
+				local targetHrp = v.Character.HumanoidRootPart
+				getChar():PivotTo(targetHrp.CFrame * CFrame.new(0, 0, 3))
+				break 
+			end 
+		end 
+	end 
+})
+
+AdminTab:CreateButton({
+	Name = "Freeze Target (Anchor)",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+				v.Character.HumanoidRootPart.Anchored = true
+			end
+		end
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Unfreeze Target (Unanchor)",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+				v.Character.HumanoidRootPart.Anchored = false
+			end
+		end
+	end,
+})
+
+AdminTab:CreateSection("Spectating")
+
+AdminTab:CreateButton({
+	Name = "Spectate Selected Target",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v ~= lp and v.Character and v.Character:FindFirstChildOfClass("Humanoid") then
+				Workspace.CurrentCamera.CameraSubject = v.Character:FindFirstChildOfClass("Humanoid")
+				createnotification("Spectate", "Now spectating: " .. v.Name, 3)
+				break
+			end
+		end
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Stop Spectating (Reset Cam)",
+	Callback = function()
+		if getChar():FindFirstChildOfClass("Humanoid") then
+			Workspace.CurrentCamera.CameraSubject = getChar():FindFirstChildOfClass("Humanoid")
+			createnotification("Spectate", "Camera reset to local player.", 3)
+		end
+	end,
+})
+
+AdminTab:CreateSection("Auras")
+
+local playerAura, plrAuraDeb = nil, tick()
+AdminTab:CreateToggle({
+	Name = "Player Damage Aura",
+	CurrentValue = false,
+	Callback = function(val)
+		if val then
+			playerAura = RunService.Heartbeat:Connect(function()
+				if (tick() - plrAuraDeb) < 0.5 then return end
+				plrAuraDeb = tick()
+				for _, plr in pairs(Players:GetPlayers()) do
+					if plr ~= lp and plr.Character and (getChar():GetPivot().Position - plr.Character:GetPivot().Position).Magnitude < 15 then
+						task.spawn(function() dealDamage(plr.Character, math.huge) end)
+					end
+				end
+			end)
+		else
+			if playerAura then playerAura:Disconnect() playerAura = nil end
+		end
+	end,
+})
+
+local reviveAura, revauradeb = nil, tick()
+AdminTab:CreateToggle({
+	Name = "Revive Aura",
+	CurrentValue = false,
+	Callback = function(val)
+		if val then
+			reviveAura = RunService.Heartbeat:Connect(function()
+				if (tick() - revauradeb) < 0.5 then return end
+				revauradeb = tick()
+				for _, plr in pairs(Players:GetPlayers()) do
+					if plr ~= lp and plr.Character and (getChar():GetPivot().Position - plr.Character:GetPivot().Position).Magnitude < 15 then
+						task.spawn(function() resPlr(plr) end)
+					end
+				end
+			end)
+		else
+			if reviveAura then reviveAura:Disconnect() reviveAura = nil end
+		end
+	end,
+})
+
+-- 14. Server & Utility Tab
+ServerTab:CreateSection("Server Control")
+
+ServerTab:CreateButton({
+	Name = "Rejoin Same Server",
+	Callback = function()
+		TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, lp)
+	end,
+})
+
+ServerTab:CreateButton({
+	Name = "Server Hop (Different Match)",
+	Callback = function()
+		local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/0?sortOrder=Asc&limit=100"))
+		for _, s in pairs(servers.data) do
+			if s.playing ~= s.maxPlayers and s.id ~= game.JobId then
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, lp)
+				break
+			end
+		end
+	end,
+})
+
+ServerTab:CreateToggle({
+	Name = "Anti-AFK Kick Protection",
+	CurrentValue = true,
+	Callback = function(val)
+		if val then
+			local bb = game:GetService("VirtualUser")
+			loopConnections["AntiAFK"] = lp.Idled:Connect(function()
+				bb:CaptureController()
+				bb:ClickButton2(Vector2.new())
+			end)
+		else
+			stoploop("AntiAFK")
+		end
+	end,
+})
+
+-- Populate Waypoints
+zombieGameData["Perks"]["mystery box"] = getMachine("mystery")
+zombieGameData["Perks"]["pap"] = getMachine("pack a punch")
+zombieGameData["Perks"]["deadshot"] = getMachine("deadshot")
+zombieGameData["Perks"]["doubletap"] = getMachine("double tap")
+zombieGameData["Perks"]["jugg"] = getMachine("jugg")
+zombieGameData["Perks"]["quick-res"] = getMachine("quick revive")
+zombieGameData["Perks"]["mule kick"] = getMachine("mule kick")
+zombieGameData["Perks"]["speed cola"] = getMachine("speed cola")
+zombieGameData["Perks"]["electric"] = getMachine("electric cherry")
+zombieGameData["Perks"]["stamin up"] = getMachine("stamin up")
+
+for i = 1, 5 do
+	zombieGameData["Perks"]["wunderfizz " .. i] = getMachine("wunderfizz " .. i)
+end
+
+for perk, perkpath in pairs(zombieGameData["Perks"]) do
+	if perkpath then wp(perk, perkpath) end
+end
+
+Rayfield:LoadConfiguration()
+createnotification("Script Fully Loaded!", "All features, entities, spawners, and world tools active.", 5)
