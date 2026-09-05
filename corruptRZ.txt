@@ -287,7 +287,7 @@ end)
 --========================================================--
 
 local Window = Rayfield:CreateWindow({
-	Name = "CorruptRZ v2]",
+	Name = "CorruptRZ v2",
 	LoadingTitle = "CorruptRZ | Auto-Updates",
 	LoadingSubtitle = "CorruptRZ Loading…",
 	ConfigurationSaving = { Enabled = false },
