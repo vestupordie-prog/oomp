@@ -1,4 +1,4 @@
---// Rayfield Gen 2 Interface Setup (MAX OVERLOAD ULTIMATE - COMBINED ENGINE) \\--
+--// Rayfield Gen 2 Interface Setup (CorruptServices) \\--
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- Notification Wrapper
@@ -287,18 +287,18 @@ end)
 --========================================================--
 
 local Window = Rayfield:CreateWindow({
-	Name = "Zombie Game Hub [MAX OVERLOAD ULTRA v8]",
-	LoadingTitle = "Zombie Admin Script (ULTIMATE EDITION)",
-	LoadingSubtitle = "All Engine Remotes & 60+ Direct Calls Active",
+	Name = "CorruptRZ v2]",
+	LoadingTitle = "CorruptRZ | Auto-Updates",
+	LoadingSubtitle = "CorruptRZ Loading…",
 	ConfigurationSaving = { Enabled = false },
 	Discord = { Enabled = false },
 	
 	KeySystem = true,
 	KeySettings = {
-		Title = "Zombie Game Hub | Key System",
+		Title = "CorruptServices RZ | Key System",
 		Subtitle = "Key System Required",
-		Note = "Get the key from our Linkvertise / Discord!",
-		FileName = "ZombieHubKey",
+		Note = "purchase a key from Site or Discord!",
+		FileName = "CrptKey",
 		SaveKey = true,
 		GrabKeyFromSite = false,
 		Key = keyList
