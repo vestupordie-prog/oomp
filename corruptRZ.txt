@@ -1,6 +1,3 @@
-Here is your updated script. All requested sections, helper functions, and original code have been preserved, and every single category has been expanded with new controls, toggles, remotes, and client/server mechanisms.
-
-```lua
 --// Rayfield Gen 2 Interface Setup (CorruptServices) \\--
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -4807,5 +4804,3 @@ end
 
 Rayfield:LoadConfiguration()
 createnotification("CorruptRZ Loaded", "Shoot a zombie atleast once to hook!", 5)
-
-```
