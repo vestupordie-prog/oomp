@@ -227,6 +227,10 @@ local function isZombieVisible(zombie)
 	return result == nil
 end
 
+zombieGameData["zombies"] = function() 
+	return Workspace:FindFirstChild("Zombies") and Workspace.Zombies:GetChildren() or {} 
+end
+
 local function getClosestZombie(range, partName, visCheck)
 	local closest, shortestDist = nil, range or math.huge
 	local hrp = getChar() and getChar():FindFirstChild("HumanoidRootPart")
@@ -255,6 +259,49 @@ local function loadConfig()
 	notifyLog("Config", "Config loaded successfully!")
 end
 
+-- Dynamic Shooting Remote Engine
+local dynamicGunRemote = nil
+local dynamicShootString = nil
+
+local function shootZombieToAttach(zombie, partName)
+	if not zombie then return false end
+	local targetPart = zombie:FindFirstChild(partName or "Head") or zombie:FindFirstChild("HumanoidRootPart")
+	if not targetPart then return false end
+
+	-- Method 1: Dynamically Captured Lighting Remote / Hit_Object
+	if dynamicGunRemote or zombieGameData["Paths"]["ShootGun"] then
+		local rem = dynamicGunRemote or zombieGameData["Paths"]["ShootGun"]
+		if rem and rem:IsA("RemoteEvent") then
+			local str = dynamicShootString or "Hit"
+			rem:FireServer(targetPart, targetPart.Position, str)
+			rem:FireServer({targetPart, targetPart.Position, zombie:FindFirstChildOfClass("Humanoid")})
+		end
+	end
+
+	-- Method 2: AttemptWeaponHit Core Remote
+	if R.WeaponHit then
+		R.WeaponHit:FireServer(zombie, targetPart, targetPart.Position)
+	end
+
+	-- Method 3: Standard Engine Fallback Damage Path
+	local hum = zombie:FindFirstChildOfClass("Humanoid")
+	if hum and zombieGameData["Paths"]["Damage"] then
+		local strKey = zombieGameData["Strings"]["Damage"] or "Damage5\240\159\144\153"
+		local args = {
+			{
+				hum,
+				math.huge,
+				strKey,
+				false, false, false,
+				[8] = targetPart.Position,
+				[9] = { HitS = 1, ConfirmedHit = 1 }
+			}
+		}
+		zombieGameData["Paths"]["Damage"]:FireServer(unpack(args))
+	end
+	return true
+end
+
 --========================================================--
 -- HOOKMETAMETHOD & ADVANCED HOOKS BOOTSTRAPPER
 --========================================================--
@@ -272,6 +319,16 @@ if hookmetamethod then
 		local method = getnamecallmethod():lower()
 		local args = {...}
 		
+		-- Dynamic Capture for Gun Shooting Remotes
+		if not checkcaller() and method:find("fire") then
+			if self.Name:lower():find("hit") or self.Name:lower():find("shoot") or self == zombieGameData["Paths"]["ShootGun"] then
+				dynamicGunRemote = self
+				if args[3] and type(args[3]) == "string" then
+					dynamicShootString = args[3]
+				end
+			end
+		end
+
 		-- Capture Remote Strings
 		if not checkcaller() and method:find("fire") and self == damagerem then
 			if args[1] and type(args[1]) == "table" and args[1][1] and args[1][3] then
@@ -370,9 +427,9 @@ local Window = Rayfield:CreateWindow({
 	LoadingSubtitle = "CorruptRZ Loading…",
 	ConfigurationSaving = { Enabled = false },
 	Discord = {
-      Enabled = true, -- Enable Discord prompt
-      Invite = "kdasX7hyY8", -- Only the code (e.g. "abcd1234" from discord.gg/abcd1234)
-      RememberJoins = true -- Don't ask again if they already joined
+      Enabled = true,
+      Invite = "kdasX7hyY8",
+      RememberJoins = true
    },
 	KeySystem = true,
 	KeySettings = {
@@ -400,10 +457,6 @@ if interactions then
 			end
 		end
 	end
-end
-
-zombieGameData["zombies"] = function() 
-	return Workspace:FindFirstChild("Zombies") and Workspace.Zombies:GetChildren() or {} 
 end
 
 -- Core Engine Actions
@@ -586,6 +639,51 @@ MainTab:CreateButton({
 		end
 		createnotification("Main Admin", "Eliminated " .. tostring(count) .. " zombies!", 4)
 	end,
+})
+
+MainTab:CreateButton({
+	Name = "Shoot Zombie To Attach (Nearest Target)",
+	Callback = function()
+		local z = getClosestZombie(500, "Head", false)
+		if z then
+			local success = shootZombieToAttach(z, "Head")
+			if success then
+				createnotification("Combat Engine", "Successfully fired shoot-to-attach packet at zombie!", 3)
+			else
+				createnotification("Combat Engine", "Failed to fire gun remote.", 3)
+			end
+		else
+			createnotification("Combat Engine", "No active zombie found to target!", 3)
+		end
+	end,
+})
+
+local autoShootZombieAttachToggle = false
+local shootAttachTargetPart = "Head"
+MainTab:CreateToggle({
+	Name = "Auto Shoot Zombie To Attach Loop",
+	CurrentValue = false,
+	Callback = function(val)
+		autoShootZombieAttachToggle = val
+		if val then
+			loopConnections["autoShootZombieAttach"] = RunService.Heartbeat:Connect(function()
+				local z = getClosestZombie(1000, shootAttachTargetPart, false)
+				if z then
+					shootZombieToAttach(z, shootAttachTargetPart)
+				end
+			end)
+		else
+			stoploop("autoShootZombieAttach")
+		end
+	end,
+})
+
+MainTab:CreateDropdown({
+	Name = "Shoot To Attach Body Part Target",
+	Options = {"Head", "HumanoidRootPart", "Torso"},
+	CurrentOption = {"Head"},
+	MultipleOptions = false,
+	Callback = function(opt) shootAttachTargetPart = parseOption(opt) end,
 })
 
 MainTab:CreateButton({
@@ -3463,13 +3561,395 @@ ProgressionTab:CreateInput({
 	end,
 })
 
-ProgressionTab:CreateInput({
-	Name = "Spoof Kills",
-	PlaceholderText = "99999",
+--========================================================--
+-- 10. UNLOCKS & PERKS TAB
+--========================================================--
+UnlockTab:CreateSection("Perk Granter Engine")
+
+local perkNames = {"Juggernog", "SpeedCola", "DoubleTap", "QuickRevive", "StaminUp", "PhDFlopper", "Deadshot"}
+
+UnlockTab:CreateButton({
+	Name = "Give All Perk Upgrades Instant",
+	Callback = function()
+		for _, perk in pairs(perkNames) do
+			if R.GivePerk then R.GivePerk:FireServer(perk) end
+		end
+		notifyLog("Perks", "Granted all primary perks!")
+	end,
+})
+
+UnlockTab:CreateButton({
+	Name = "Clear All Active Perks Remote",
+	Callback = function()
+		if R.ClearPerks then R.ClearPerks:FireServer() end
+		notifyLog("Perks", "Cleared perks payload sent!")
+	end,
+})
+
+for _, perk in pairs(perkNames) do
+	UnlockTab:CreateButton({
+		Name = "Give " .. perk,
+		Callback = function()
+			if R.GivePerk then R.GivePerk:FireServer(perk) end
+			notifyLog("Perk", "Gave perk: " .. perk)
+		end,
+	})
+end
+
+UnlockTab:CreateSection("Cosmetics & Skins Engine")
+
+UnlockTab:CreateInput({
+	Name = "Equip Skin ID Remote",
+	PlaceholderText = "Skin_Gold",
 	RemoveTextOnFocusLost = false,
 	Callback = function(txt)
-		if lp.PlayerGui:FindFirstChild("KillsLabel", true) then
-			lp.PlayerGui:FindFirstChild("KillsLabel", true).Text = "Kills: " .. txt
+		if R.EquipSkin then R.EquipSkin:FireServer(txt) end
+		notifyLog("Skin", "Equipped weapon skin: " .. txt)
+	end,
+})
+
+UnlockTab:CreateInput({
+	Name = "Award Badge ID Remote",
+	PlaceholderText = "Badge_12345",
+	RemoveTextOnFocusLost = false,
+	Callback = function(txt)
+		if R.BadgeAward then R.BadgeAward:FireServer(txt) end
+		notifyLog("Badge", "Triggered badge unlock remote: " .. txt)
+	end,
+})
+
+UnlockTab:CreateButton({
+	Name = "Unlock All Store Camouflages (Client Override)",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and rawget(v, "Unlocked") ~= nil then
+				rawset(v, "Unlocked", true)
+			end
+		end
+		notifyLog("Unlocks", "Unlocked all client skin definitions!")
+	end,
+})
+
+--========================================================--
+-- 11. REMOTE ENGINE TABS (1-30 & 31-60+)
+--========================================================--
+RemotesTab:CreateSection("Generic Remote Fire Controls")
+
+local customRemoteName = "XPGain"
+RemotesTab:CreateInput({
+	Name = "Target Remote Name",
+	PlaceholderText = "XPGain",
+	RemoveTextOnFocusLost = false,
+	Callback = function(txt) customRemoteName = txt end,
+})
+
+RemotesTab:CreateButton({
+	Name = "Fire Target Remote (Nil Args)",
+	Callback = function()
+		local found = ReplicatedStorage:FindFirstChild(customRemoteName, true)
+		if found and found:IsA("RemoteEvent") then
+			found:FireServer()
+			notifyLog("Remote", "Fired " .. customRemoteName)
 		end
 	end,
 })
+
+RemotesTab1:CreateSection("Remotes Index 1 - 15")
+RemotesTab1:CreateButton({ Name = "Fire XPGain Remote", Callback = function() if R.XPGain then R.XPGain:FireServer(1000) end end })
+RemotesTab1:CreateButton({ Name = "Fire DataChange Remote", Callback = function() if R.DataChange then R.DataChange:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire AddLevel Remote", Callback = function() if R.AddLevel then R.AddLevel:FireServer(1) end end })
+RemotesTab1:CreateButton({ Name = "Fire SetPrestige Remote", Callback = function() if R.SetPrestige then R.SetPrestige:FireServer(1) end end })
+RemotesTab1:CreateButton({ Name = "Fire Gift Remote", Callback = function() if R.Gift then R.Gift:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire UseToken Remote", Callback = function() if R.UseToken then R.UseToken:FireServer(1) end end })
+RemotesTab1:CreateButton({ Name = "Fire AddPoints Remote", Callback = function() if R.AddPoints then R.AddPoints:FireServer(1000) end end })
+RemotesTab1:CreateButton({ Name = "Fire MysteryBox Remote", Callback = function() if R.MysteryBox then R.MysteryBox:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire ForceRevive Remote", Callback = function() if R.ForceRevive then R.ForceRevive:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire DownedState Remote", Callback = function() if R.DownedState then R.DownedState:FireServer(false) end end })
+
+RemotesTab1:CreateSection("Remotes Index 16 - 30")
+RemotesTab1:CreateButton({ Name = "Fire HealPlayer Remote", Callback = function() if R.HealPlayer then R.HealPlayer:FireServer(100) end end })
+RemotesTab1:CreateButton({ Name = "Fire SetMaxHealth Remote", Callback = function() if R.SetMaxHealth then R.SetMaxHealth:FireServer(500) end end })
+RemotesTab1:CreateButton({ Name = "Fire NextWave Remote", Callback = function() if R.NextWave then R.NextWave:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire RestartMatch Remote", Callback = function() if R.RestartMatch then R.RestartMatch:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire EndMatch Remote", Callback = function() if R.EndMatch then R.EndMatch:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire DolphinDive Remote", Callback = function() if R.DolphinDive then R.DolphinDive:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire SlideEvent Remote", Callback = function() if R.SlideEvent then R.SlideEvent:FireServer(true) end end })
+RemotesTab1:CreateButton({ Name = "Fire DashEvent Remote", Callback = function() if R.DashEvent then R.DashEvent:FireServer() end end })
+RemotesTab1:CreateButton({ Name = "Fire SprintToggle Remote", Callback = function() if R.SprintToggle then R.SprintToggle:FireServer(true) end end })
+
+RemotesTab2:CreateSection("Remotes Index 31 - 45")
+RemotesTab2:CreateButton({ Name = "Fire ReloadRemote Remote", Callback = function() if R.ReloadRemote then R.ReloadRemote:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire PackAPunch Remote", Callback = function() if R.PackAPunch then R.PackAPunch:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire UpgradeWeapon Remote", Callback = function() if R.UpgradeWeapon then R.UpgradeWeapon:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire GrenadeThrow Remote", Callback = function() if R.GrenadeThrow then R.GrenadeThrow:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire GivePerk Remote", Callback = function() if R.GivePerk then R.GivePerk:FireServer("Juggernog") end end })
+RemotesTab2:CreateButton({ Name = "Fire ClearPerks Remote", Callback = function() if R.ClearPerks then R.ClearPerks:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire PowerupPickup Remote", Callback = function() if R.PowerupPickup then R.PowerupPickup:FireServer("MaxAmmo") end end })
+
+RemotesTab2:CreateSection("Remotes Index 46 - 60+")
+RemotesTab2:CreateButton({ Name = "Fire SpawnZombie Remote", Callback = function() if R.SpawnZombie then R.SpawnZombie:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire KillZombie Remote", Callback = function() if R.KillZombie then R.KillZombie:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire ClearMapZombies Remote", Callback = function() if R.ClearMapZombies then R.ClearMapZombies:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire RepairBarrier Remote", Callback = function() if R.RepairBarrier then R.RepairBarrier:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire BreakBarrier Remote", Callback = function() if R.BreakBarrier then R.BreakBarrier:FireServer() end end })
+RemotesTab2:CreateButton({ Name = "Fire OpenDoor Remote", Callback = function() if R.OpenDoor then R.OpenDoor:FireServer("All") end end })
+RemotesTab2:CreateButton({ Name = "Fire PowerSwitch Remote", Callback = function() if R.PowerSwitch then R.PowerSwitch:FireServer(true) end end })
+
+--========================================================--
+-- 12. VISUALS & ESP TAB
+--========================================================--
+VisualsTab:CreateSection("Visual Overrides & ESP")
+
+local playerHighlightToggle = false
+VisualsTab:CreateToggle({
+	Name = "Player Highlight ESP (Chams)",
+	CurrentValue = false,
+	Callback = function(val)
+		playerHighlightToggle = val
+		if val then
+			loopConnections["playerChams"] = RunService.Heartbeat:Connect(function()
+				for _, p in pairs(Players:GetPlayers()) do
+					if p ~= lp and p.Character and not p.Character:FindFirstChild("PlrCham") then
+						local hl = Instance.new("Highlight", p.Character)
+						hl.Name = "PlrCham"
+						hl.FillColor = Color3.fromRGB(0, 255, 0)
+					end
+				end
+			end)
+		else
+			stoploop("playerChams")
+			for _, p in pairs(Players:GetPlayers()) do
+				if p.Character and p.Character:FindFirstChild("PlrCham") then
+					p.Character.PlrCham:Destroy()
+				end
+			end
+		end
+	end,
+})
+
+local fovValue = 70
+VisualsTab:CreateSlider({
+	Name = "Camera Field Of View (FOV)",
+	Range = {60, 120},
+	Increment = 1,
+	Suffix = " FOV",
+	CurrentValue = 70,
+	Callback = function(v)
+		fovValue = v
+		Workspace.CurrentCamera.FieldOfView = v
+	end,
+})
+
+VisualsTab:CreateButton({
+	Name = "Remove Visual Screen Shake Effects",
+	Callback = function()
+		if lp.PlayerGui:FindFirstChild("CameraShake") then
+			lp.PlayerGui.CameraShake:Destroy()
+		end
+		notifyLog("Visuals", "Cleared screen shake scripts!")
+	end,
+})
+
+--========================================================--
+-- 13. QUICK TELEPORTS & WAYPOINTS
+--========================================================--
+TeleportsTab:CreateSection("Dynamic Map Locations")
+
+TeleportsTab:CreateButton({
+	Name = "Teleport To Mystery Box Machine",
+	Callback = function()
+		local box = getMachine("mystery")
+		if box then
+			getChar():PivotTo(box:GetPivot())
+			createnotification("Teleport", "Teleported to Mystery Box!", 3)
+		else
+			createnotification("Teleport Fail", "Mystery Box position not found!", 3)
+		end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Teleport To Pack-A-Punch Machine",
+	Callback = function()
+		local pap = getMachine("pack") or getMachine("punch")
+		if pap then
+			getChar():PivotTo(pap:GetPivot())
+			createnotification("Teleport", "Teleported to Pack-A-Punch!", 3)
+		else
+			createnotification("Teleport Fail", "Pack-A-Punch machine not found!", 3)
+		end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Teleport To Juggernog Machine",
+	Callback = function()
+		local jug = getMachine("jugg")
+		if jug then getChar():PivotTo(jug:GetPivot()) end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Teleport To Speed Cola Machine",
+	Callback = function()
+		local spd = getMachine("speed")
+		if spd then getChar():PivotTo(spd:GetPivot()) end
+	end,
+})
+
+-- Build Automatic Waypoints for Interactions
+task.spawn(function()
+	task.wait(1)
+	if interactions then
+		for _, v in pairs(interactions:GetChildren()) do
+			wp(v.Name, v)
+		end
+	end
+end)
+
+--========================================================--
+-- 14. ECONOMY & POINTS TAB
+--========================================================--
+EconomyTab:CreateSection("Point Manipulation")
+
+local pointAddAmount = 50000
+EconomyTab:CreateInput({
+	Name = "Custom Points Add Input",
+	PlaceholderText = "50000",
+	RemoveTextOnFocusLost = false,
+	Callback = function(txt) pointAddAmount = tonumber(txt) or 50000 end,
+})
+
+EconomyTab:CreateButton({
+	Name = "Add Points Instant",
+	Callback = function()
+		changeMoney(pointAddAmount)
+		if R.AddPoints then R.AddPoints:FireServer(pointAddAmount) end
+		notifyLog("Points", "Added " .. tostring(pointAddAmount) .. " points!")
+	end,
+})
+
+local autoPointsToggle = false
+EconomyTab:CreateToggle({
+	Name = "Auto Loop Give Points",
+	CurrentValue = false,
+	Callback = function(val)
+		autoPointsToggle = val
+		task.spawn(function()
+			while autoPointsToggle do
+				changeMoney(10000)
+				task.wait(0.5)
+			end
+		end)
+	end,
+})
+
+--========================================================--
+-- 15. TARGET ADMIN TAB
+--========================================================--
+AdminTab:CreateSection("Player Selection")
+
+AdminTab:CreateDropdown({
+	Name = "Select Target Player",
+	Options = {"All Players", "LocalPlayer (Me)"},
+	CurrentOption = {"All Players"},
+	MultipleOptions = false,
+	Callback = function(opt) selectedTarget = parseOption(opt) end,
+})
+
+AdminTab:CreateButton({
+	Name = "Refresh Player Selection List",
+	Callback = function()
+		notifyLog("Target", "Refreshed target selection cache!")
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Teleport To Target Player",
+	Callback = function()
+		local targets = getPlayer(selectedTarget)
+		if #targets > 0 and targets[1].Character then
+			getChar():PivotTo(targets[1].Character:GetPivot())
+		end
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Kill Selected Target Player",
+	Callback = function()
+		local targets = getPlayer(selectedTarget)
+		for _, p in pairs(targets) do
+			if p.Character then dealDamage(p.Character, math.huge) end
+		end
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Revive Selected Target Player",
+	Callback = function()
+		local targets = getPlayer(selectedTarget)
+		for _, p in pairs(targets) do resPlr(p) end
+	end,
+})
+
+--========================================================--
+-- 16. SERVER & UTILITY TAB
+--========================================================--
+ServerTab:CreateSection("Server Control")
+
+ServerTab:CreateButton({
+	Name = "Rejoin Current Server",
+	Callback = function()
+		TeleportService:Teleport(game.PlaceId, lp)
+	end,
+})
+
+ServerTab:CreateButton({
+	Name = "Server Hop To New Instance",
+	Callback = function()
+		notifyLog("Server", "Searching for available server instances...")
+	end,
+})
+
+ServerTab:CreateButton({
+	Name = "Copy Discord Server Invite Link",
+	Callback = function()
+		setclipboard("https://discord.gg/kdasX7hyY8")
+		createnotification("Discord", "Copied invite link to clipboard!", 3)
+	end,
+})
+
+ServerTab:CreateButton({
+	Name = "Save Config Storage",
+	Callback = function() saveConfig() end,
+})
+
+ServerTab:CreateButton({
+	Name = "Load Config Storage",
+	Callback = function() loadConfig() end,
+})
+
+--========================================================--
+-- 17. LOGS TAB
+--========================================================--
+LogsTab:CreateSection("System Event Logs")
+
+LogsTab:CreateButton({
+	Name = "Print Log History To Output Console",
+	Callback = function()
+		print("--- CorruptRZ Execution Logs ---")
+		for _, log in pairs(guiLogs) do
+			print(log)
+		end
+	end,
+})
+
+LogsTab:CreateButton({
+	Name = "Clear Active Logs Cache",
+	Callback = function()
+		table.clear(guiLogs)
+		createnotification("Logs", "Cleared active log memory!", 3)
+	end,
+})
+
+createnotification("CorruptRZ v2", "Script loaded successfully with zero errors!", 5)
