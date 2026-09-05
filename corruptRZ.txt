@@ -1740,4 +1740,4 @@ for perk, perkpath in pairs(zombieGameData["Perks"]) do
 end
 
 Rayfield:LoadConfiguration()
-createnotification("Script Maxed Out!", "All 3 source scripts successfully combined into MAX v8!", 5)
+createnotification("CorruptRZ Loaded", "Shoot a zombie atleast once to hook!", 5)
