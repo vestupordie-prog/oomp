@@ -291,7 +291,12 @@ local Window = Rayfield:CreateWindow({
 	LoadingTitle = "CorruptRZ | Auto-Updates",
 	LoadingSubtitle = "CorruptRZ Loading…",
 	ConfigurationSaving = { Enabled = false },
-	Discord = { Enabled = false },
+	Discord = {
+      Enabled = true, -- Enable Discord prompt
+      Invite = "kdasX7hyY8", -- Only the code (e.g. "abcd1234" from discord.gg/abcd1234)
+      RememberJoins = true -- Don't ask again if they already joined
+   }
+})
 	
 	KeySystem = true,
 	KeySettings = {
@@ -491,6 +496,49 @@ local ServerTab = Window:CreateTab("Server & Utility", 4483362458)
 --========================================================--
 -- 1. MAIN COMMANDS TAB
 --========================================================--
+MainTab:CreateSection("Links")
+-- Button to Copy Website Link
+local WebsiteButton = MainTab:CreateButton({
+   Name = "Copy Purchase Link",
+   Callback = function()
+      local siteUrl = "https://corruptservices.mysellauth.com/products"
+      
+      -- Copy to clipboard
+      if setclipboard then
+         setclipboard(siteUrl)
+      elseif Synapse and Synapse.set_clipboard then
+         Synapse.set_clipboard(siteUrl)
+      end
+
+      -- Send a Rayfield notification
+      Rayfield:Notify({
+         Title = "Website Copied!",
+         Content = "The link to our website was copied to your clipboard.",
+         Duration = 5,
+         Image = 4483362458,
+      })
+   end,
+})
+
+-- Button to Copy Discord Link manually
+local DiscordButton = MainTab:CreateButton({
+   Name = "Copy Discord Link",
+   Callback = function()
+      local discordUrl = "https://discord.gg/kdasX7hyY8"
+      
+      if setclipboard then
+         setclipboard(discordUrl)
+      end
+
+      Rayfield:Notify({
+         Title = "Discord Copied!",
+         Content = "The Discord invite link was copied to your clipboard.",
+         Duration = 5,
+         Image = 4483362458,
+      })
+   end,
+})
+
 MainTab:CreateSection("Instant Global Commands")
 
 MainTab:CreateButton({
