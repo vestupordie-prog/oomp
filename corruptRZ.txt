@@ -1562,6 +1562,15 @@ AdminTab:CreateToggle({
 	end,
 })
 
+AdminTab:CreateButton({ 
+	Name = "Godmode Target (Health Heal Loop)", 
+	Callback = function() 
+		for _, v in pairs(getPlayer(selectedTarget)) do 
+			if v.Character then dealDamage(v.Character, -math.huge) end 
+		end 
+	end 
+})
+
 AdminTab:CreateSection("Position & Movement")
 
 AdminTab:CreateButton({ 
