@@ -1,25 +1,4 @@
-Here is the fully maxed-out, feature-complete version of the script. Every existing category has been heavily expanded with advanced automation, exploits, dynamic loops, full server/client overrides, and specialized utility tools.
 
-### Major Additions & Enhancements Across All Categories:
-
-1. **Main Commands:** Added **Godmode Toggle**, **Kill All Zombies (Nuke Engine)**, and **Instant Revive All Players**.
-2. **Movement & Self:** Added **Infinite Jump**, **Flight Velocity Customizer**, **No Clip Toggle**, **Speed/Jump Multipliers**, and **Gravity Modifiers**.
-3. **Weapons & Combat:** Added **Instant Reload Hook**, **Infinite Spare Ammo**, **Rapid Fire Override**, **Wallbang / Raycast Penetration**, and **Headshot-Only Aimbot Lock**.
-4. **Defense & Godmode:** Added **Anti-Knockback / Stun Immunity**, **Custom Zombie Damage Negation**, **Auto Health-Regen Boost**, and **Dumb AI Immobilizer**.
-5. **Power & Switches:** Added **Auto-Turn On Power Loop**, **Distance-based Switch Interactor**, and **Teleport To Power Switch**.
-6. **Entities & Spawner:** Added **Custom Zombie Vacuum (Pull to Crosshair)**, **Mass Zombie Duplicator/Spawner**, and **Freeze All Zombies**.
-7. **World & Environment:** Added **Custom Field of View (FOV)**, **Night Vision Mode**, **Remove Fog & Full Bright**, and **Map Barrier Removal Engine**.
-8. **Automation & Farm:** Added **Auto-Collect All Powerups**, **Instant Round Fast-Forward**, **Auto Barrier Repair Engine**, and **Automated XP & Point Loop**.
-9. **XP & Progression:** Added **Custom XP Injection Slider**, **Auto Gift/Token Loop**, and **Milestone/Badge Spammer**.
-10. **Unlocks & Perks:** Added **Unlock All Weapons / Perks Operator**, **Infinite Perk Limit Bypass**, and **Instant Wall-Buy Collector**.
-11. **Remote Engine:** Added **Remote Traffic Monitor Log**, **Custom Event Execution Terminal**, and **Server Remote Crash / Flood Protection**.
-12. **Visuals & ESP:** Added **Zombie ESP (Color/Distance)**, **Player ESP (Health/Box)**, **Powerup/Drop ESP**, and **Wall-Hack Tracer Lines**.
-13. **Quick Teleports & Waypoints:** Added **Instant TP To All Perks / Mystery Box / PAP**, and **Dynamic Waypoint Creator (Add Custom Waypoint at Current Location)**.
-14. **Economy & Points:** Added **Instant 10M Points**, **Points Multiplier Modifier**, and **Point Drain Protection**.
-15. **Target Admin:** Added **Loop Kill Target**, **Loop Revive Target**, **Spectate Mode**, **Bring Target**, **Freeze/Unfreeze Target**, and **Teleport Behind Target**.
-16. **Server & Utility:** Added **Rejoin Server**, **Server Hop**, **Chat Command Injector**, and **Anti-AFK Protection**.
-
-```lua
 --// Rayfield Gen 2 Interface Setup (MAX OVERLOAD ULTRA v6 - ABSOLUTE MAX) \\--
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -1515,4 +1494,4 @@ end
 Rayfield:LoadConfiguration()
 createnotification("Script Maxed Out!", "All categories updated with max features.", 5)
 
-```
+
