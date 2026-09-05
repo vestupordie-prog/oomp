@@ -295,9 +295,7 @@ local Window = Rayfield:CreateWindow({
       Enabled = true, -- Enable Discord prompt
       Invite = "kdasX7hyY8", -- Only the code (e.g. "abcd1234" from discord.gg/abcd1234)
       RememberJoins = true -- Don't ask again if they already joined
-   }
-})
-	
+   },
 	KeySystem = true,
 	KeySettings = {
 		Title = "CorruptServices RZ | Key System",
