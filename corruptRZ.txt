@@ -1573,6 +1573,60 @@ CombatTab:CreateToggle({
 	end,
 })
 
+-- Free Pack-A-Punch Current Held Weapon
+CombatTab:CreateButton({
+	Name = "Pack-A-Punch Held Weapon (Free)",
+	Callback = function()
+		if R.PackAPunch then
+			R.PackAPunch:FireServer()
+		elseif R.UpgradeWeapon then
+			R.UpgradeWeapon:FireServer()
+		else
+			local pap = getMachine("pack a punch")
+			if pap and pap:FindFirstChild("Interact") then
+				pap.Interact:FireServer()
+			end
+		end
+		createnotification("Pack-A-Punch", "Upgraded current weapon!", 3)
+	end,
+})
+
+-- Max Upgrade Level Instantly
+CombatTab:CreateButton({
+	Name = "Force Tier 3 / Max Upgrade Held Gun",
+	Callback = function()
+		if R.UpgradeWeapon then
+			for i = 1, 3 do
+				R.UpgradeWeapon:FireServer(i)
+			end
+		end
+		createnotification("Pack-A-Punch", "Applied Max Tier Upgrade!", 3)
+	end,
+})
+
+-- Un-Pack-A-Punch Weapon (Revert to Stock)
+CombatTab:CreateButton({
+	Name = "Remove Pack-A-Punch Upgrade",
+	Callback = function()
+		if R.UpgradeWeapon then
+			R.UpgradeWeapon:FireServer(0)
+			createnotification("Pack-A-Punch", "Reverted weapon to base version!", 3)
+		end
+	end,
+})
+
+-- Teleport Pack-A-Punch Machine directly to Player
+CombatTab:CreateButton({
+	Name = "Bring Pack-A-Punch Machine to Me",
+	Callback = function()
+		local pap = getMachine("pack a punch")
+		if pap and getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+			pap:PivotTo(getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, -5))
+			createnotification("Pack-A-Punch", "Moved PAP Machine in front of you!", 3)
+		end
+	end,
+})
+
 local noSpreadToggle = false
 CombatTab:CreateToggle({
 	Name = "No Spread Table Force Zero",
@@ -2485,7 +2539,24 @@ PowerTab:CreateToggle({
 --========================================================--
 -- 6. ENTITIES & SPAWNER TAB
 --========================================================--
-SpawnTab:CreateSection("Zombie Spawners & Vacuums")
+SpawnTab:CreateSection("Zombie & Spawners & Vacuums")
+
+-- Instant Powerup Spawners
+local powerupTypes = {"Max Ammo", "Insta Kill", "Double Points", "Nuke", "Carpenter", "Fire Sale"}
+
+for _, pType in ipairs(powerupTypes) do
+	SpawnTab:CreateButton({
+		Name = "Spawn Drop: " .. pType,
+		Callback = function()
+			if R.SpawnPowerup then
+				R.SpawnPowerup:FireServer(pType)
+			elseif R.PowerupPickup then
+				R.PowerupPickup:FireServer(pType)
+			end
+			createnotification("Drops", "Spawned " .. pType .. " power-up!", 3)
+		end,
+	})
+end
 
 SpawnTab:CreateButton({
 	Name = "Spawn Zombie At Cursor Position",
@@ -3935,6 +4006,66 @@ EconomyTab:CreateButton({
 	end,
 })
 
+-- Force Next Box Roll Weapon
+local forcedBoxWeapon = "Ray Gun"
+EconomyTab:CreateInput({
+	Name = "Force Mystery Box Weapon Output",
+	PlaceholderText = "Ray Gun",
+	RemoveTextOnFocusLost = false,
+	Callback = function(Text)
+		forcedBoxWeapon = Text
+		if R.MysteryBox then
+			-- Hook or override mystery box parameter
+			pcall(function()
+				R.MysteryBox:FireServer(forcedBoxWeapon)
+			end)
+		end
+		createnotification("Mystery Box", "Set forced box roll to: " .. forcedBoxWeapon, 3)
+	end,
+})
+
+-- Spin Box Remotely (From Anywhere)
+EconomyTab:CreateButton({
+	Name = "Spin Mystery Box Remotely",
+	Callback = function()
+		if R.MysteryBox then
+			R.MysteryBox:FireServer()
+			createnotification("Mystery Box", "Triggered remote box spin!", 3)
+		else
+			local box = getMachine("mystery")
+			if box and box:FindFirstChild("Interact") then
+				box.Interact:FireServer()
+			end
+		end
+	end,
+})
+
+-- Instant Mystery Box (No Roll Spin Delay)
+EconomyTab:CreateButton({
+	Name = "Instant Mystery Box Roll",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and rawget(v, "BoxSpinTime") then
+				rawset(v, "BoxSpinTime", 0)
+			end
+		end
+		createnotification("Mystery Box", "Set Mystery Box spin time to instant!", 3)
+	end,
+})
+
+-- Prevent Mystery Box Teddy Bear / Reslocate Moving
+EconomyTab:CreateToggle({
+	Name = "Lock Box Location (Anti-Teddy Bear)",
+	CurrentValue = false,
+	Callback = function(val)
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and rawget(v, "CanMoveBox") then
+				rawset(v, "CanMoveBox", not val)
+			end
+		end
+	end,
+})
+
 local autoPointsToggle = false
 EconomyTab:CreateToggle({
 	Name = "Auto Loop Give Points",
@@ -4036,6 +4167,106 @@ AdminTab:CreateButton({
 	end 
 })
 
+-- Add Points to Selected Target
+AdminTab:CreateInput({
+	Name = "Give Points to Target",
+	PlaceholderText = "10000",
+	RemoveTextOnFocusLost = true,
+	Callback = function(Text)
+		local amount = tonumber(Text) or 10000
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if R.AddPoints then
+				R.AddPoints:FireServer(amount, v)
+			elseif zombieGameData["Paths"]["Damage"] then
+				-- Remote string override fallback
+				zombieGameData["Paths"]["Damage"]:FireServer({{0, amount, zombieGameData["Strings"]["Rewards"], v}})
+			end
+		end
+		createnotification("Target Admin", "Added " .. tostring(amount) .. " points to " .. selectedTarget, 3)
+	end,
+})
+
+-- Remove / Wipe Points from Selected Target
+AdminTab:CreateInput({
+	Name = "Deduct Points from Target",
+	PlaceholderText = "10000",
+	RemoveTextOnFocusLost = true,
+	Callback = function(Text)
+		local amount = tonumber(Text) or 10000
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if R.DeductPoints then
+				R.DeductPoints:FireServer(amount, v)
+			elseif R.AddPoints then
+				R.AddPoints:FireServer(-amount, v)
+			end
+		end
+		createnotification("Target Admin", "Deducted " .. tostring(amount) .. " points from " .. selectedTarget, 3)
+	end,
+})
+
+-- Give Specific Weapon to Target
+local weaponToGive = "Ray Gun"
+AdminTab:CreateInput({
+	Name = "Weapon Name to Give",
+	PlaceholderText = "Ray Gun / Wunderwaffe DG-2 / Blundergat",
+	RemoveTextOnFocusLost = false,
+	Callback = function(Text)
+		weaponToGive = Text
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Give Weapon to Selected Target",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("GiveWeapon") then
+				ReplicatedStorage.Events.GiveWeapon:FireServer(weaponToGive, v)
+			elseif R.PurchaseItem then
+				R.PurchaseItem:FireServer(weaponToGive, v)
+			end
+		end
+		createnotification("Target Admin", "Gave " .. weaponToGive .. " to " .. selectedTarget, 3)
+	end,
+})
+
+-- Strip / Remove Active Weapons from Target
+AdminTab:CreateButton({
+	Name = "Strip Target Weapons",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v.Character then
+				for _, item in pairs(v.Character:GetChildren()) do
+					if item:IsA("Tool") then
+						item:Destroy()
+					end
+				end
+				if v:FindFirstChild("Backpack") then
+					v.Backpack:ClearAllChildren()
+				end
+			end
+			if R.DropWeapon then
+				R.DropWeapon:FireServer(v)
+			end
+		end
+		createnotification("Target Admin", "Stripped weapons from " .. selectedTarget, 3)
+	end,
+})
+
+-- Force Target to Downed State
+AdminTab:CreateButton({
+	Name = "Force Down Target",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if R.DownedState then
+				R.DownedState:FireServer(true, v)
+			elseif v.Character then
+				dealDamage(v.Character, 9999)
+			end
+		end
+		createnotification("Target Admin", "Downed " .. selectedTarget, 3)
+	end,
+})
+
 AdminTab:CreateSection("Position & Movement")
 
 AdminTab:CreateButton({ 
@@ -4112,6 +4343,53 @@ AdminTab:CreateButton({
 -- 16. SERVER & UTILITY TAB
 --========================================================--
 ServerTab:CreateSection("Server Control")
+
+-- Force Skip to Specific Wave / Round
+ServerTab:CreateInput({
+	Name = "Set Wave / Round Number",
+	PlaceholderText = "50",
+	RemoveTextOnFocusLost = true,
+	Callback = function(Text)
+		local waveNum = tonumber(Text) or 1
+		if R.NextWave then
+			for i = 1, waveNum do
+				R.NextWave:FireServer(i)
+			end
+		end
+		createnotification("Wave Control", "Advanced match to round: " .. tostring(waveNum), 3)
+	end,
+})
+
+-- Instant Skip Current Round
+ServerTab:CreateButton({
+	Name = "Instant Skip Current Round",
+	Callback = function()
+		if R.NextWave then
+			R.NextWave:FireServer()
+			createnotification("Wave Control", "Skipped current wave!", 3)
+		end
+	end,
+})
+
+-- Force End / Fail Match
+ServerTab:CreateButton({
+	Name = "Force End Match (Trigger Defeat)",
+	Callback = function()
+		if R.EndMatch then
+			R.EndMatch:FireServer()
+		end
+	end,
+})
+
+-- Force Restart Match
+ServerTab:CreateButton({
+	Name = "Force Restart Round 1",
+	Callback = function()
+		if R.RestartMatch then
+			R.RestartMatch:FireServer()
+		end
+	end,
+})
 
 ServerTab:CreateButton({
 	Name = "Rejoin Current Server",
