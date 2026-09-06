@@ -4356,6 +4356,21 @@ AdminTab:CreateButton({
 Players.PlayerAdded:Connect(function() TargetDropdown:Refresh(getPlayerList()) end)
 Players.PlayerRemoving:Connect(function() TargetDropdown:Refresh(getPlayerList()) end)
 
+AdminTab:CreateSection("Nuke All Players")
+CombatTab:CreateButton({
+	Name = "Nuke Map (Fire All Damage Remotes)",
+	Callback = function()
+		-- Loop through all connected players
+		for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+			-- Ensure the player has a character and a humanoid
+			if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+				dealDamage(player.Character, math.huge)
+			end
+		end
+		createnotification("Remote Engine", "Nuked All Players!", 5)
+	end,
+})
+
 AdminTab:CreateSection("Direct Combat & Health Actions")
 
 AdminTab:CreateButton({
