@@ -1573,6 +1573,126 @@ CombatTab:CreateToggle({
 	end,
 })
 
+-- Advanced Gun & Combat Modifiers
+CombatTab:CreateSection("Gun Physics & Rate of Fire Engines")
+
+CombatTab:CreateSlider({
+	Name = "Custom Weapon Fire-Rate Multiplier",
+	Range = {1, 50},
+	Increment = 1,
+	Suffix = "x Speed",
+	CurrentValue = 1,
+	Callback = function(Value)
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and (rawget(v, "FireRate") or rawget(v, "FireDelay") or rawget(v, "RPM")) then
+				if rawget(v, "FireRate") then rawset(v, "FireRate", 0.01 / Value) end
+				if rawget(v, "FireDelay") then rawset(v, "FireDelay", 0.01 / Value) end
+			end
+		end
+	end,
+})
+
+CombatTab:CreateToggle({
+	Name = "Infinite Bullet Penetration / Wallbang All Geometry",
+	CurrentValue = false,
+	Callback = function(val)
+		wallbangEnabled = val
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and (rawget(v, "Penetration") or rawget(v, "MaxPenetration")) then
+				rawset(v, "Penetration", val and 9999 or 1)
+				rawset(v, "MaxPenetration", val and 9999 or 1)
+			end
+		end
+	end,
+})
+
+CombatTab:CreateSection("Zombie Hitbox Expander & Bullet Magnetism")
+
+local expandedHitboxes = false
+CombatTab:CreateToggle({
+	Name = "Expand Zombie Head Hitboxes (Size Multiplier)",
+	CurrentValue = false,
+	Callback = function(val)
+		expandedHitboxes = val
+		task.spawn(function()
+			while expandedHitboxes do
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z and z:FindFirstChild("Head") then
+						z.Head.Size = Vector3.new(10, 10, 10)
+						z.Head.Transparency = 0.6
+						z.Head.CanCollide = false
+					end
+				end
+				task.wait(1)
+			end
+			if not expandedHitboxes then
+				for _, z in pairs(zombieGameData["zombies"]()) do
+					if z and z:FindFirstChild("Head") then
+						z.Head.Size = Vector3.new(1.2, 1.2, 1.2)
+						z.Head.Transparency = 0
+					end
+				end
+			end
+		end)
+	end,
+})
+
+CombatTab:CreateToggle({
+	Name = "Always Critical / Headshot Override",
+	CurrentValue = false,
+	Callback = function(val)
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and (rawget(v, "AlwaysHeadshot") or rawget(v, "CritMultiplier")) then
+				rawset(v, "AlwaysHeadshot", val)
+				rawset(v, "CritMultiplier", val and 999 or 2)
+			end
+		end
+	end,
+})
+
+CombatTab:CreateSection("Equipped Weapon Modifiers")
+
+CombatTab:CreateButton({
+	Name = "Instant Aim-Down-Sights (ADS Speed)",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and (rawget(v, "ADSSpeed") or rawget(v, "AimTime")) then
+				rawset(v, "ADSSpeed", 0)
+				rawset(v, "AimTime", 0)
+			end
+		end
+		createnotification("Combat", "Set ADS delay to instant!", 3)
+	end,
+})
+
+CombatTab:CreateButton({
+	Name = "Remove Gun Spread & Crosshair Bloom",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" then
+				if rawget(v, "Spread") then rawset(v, "Spread", 0) end
+				if rawget(v, "MinSpread") then rawset(v, "MinSpread", 0) end
+				if rawget(v, "MaxSpread") then rawset(v, "MaxSpread", 0) end
+			end
+		end
+		createnotification("Combat", "Zeroed all weapon crosshair bloom!", 3)
+	end,
+})
+
+CombatTab:CreateButton({
+	Name = "Enable Explosive Rounds on All Weapons",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and (rawget(v, "Explosive") or rawget(v, "SplashDamage")) then
+				rawset(v, "Explosive", true)
+				rawset(v, "SplashDamage", 100)
+				rawset(v, "SplashRadius", 15)
+			end
+		end
+		createnotification("Combat", "Converted standard bullets into explosive rounds!", 3)
+	end,
+})
+
 -- Free Pack-A-Punch Current Held Weapon
 CombatTab:CreateButton({
 	Name = "Pack-A-Punch Held Weapon (Free)",
@@ -3996,6 +4116,96 @@ EconomyTab:CreateButton({
 	end,
 })
 
+-- Advanced Mystery Box Overrides
+EconomyTab:CreateSection("Mystery Box Manipulation & Duplication")
+
+EconomyTab:CreateButton({
+	Name = "Teleport Mystery Box to Player",
+	Callback = function()
+		local box = getMachine("mystery")
+		if box and getChar() and getChar():FindFirstChild("HumanoidRootPart") then
+			box:PivotTo(getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, -6))
+			createnotification("Mystery Box", "Moved Mystery Box to your location!", 3)
+		end
+	end,
+})
+
+EconomyTab:CreateToggle({
+	Name = "Auto-Collect Dropped Box Weapons",
+	CurrentValue = false,
+	Callback = function(val)
+		stoploop("autoCollectBox")
+		if val then
+			loopConnections["autoCollectBox"] = RunService.Heartbeat:Connect(function()
+				local box = getMachine("mystery")
+				if box then
+					for _, item in pairs(box:GetDescendants()) do
+						if item:IsA("ProximityPrompt") then
+							fireproximityprompt(item)
+						elseif item:IsA("TouchTransmitter") and getChar():FindFirstChild("HumanoidRootPart") then
+							firetouchinterest(getChar().HumanoidRootPart, item.Parent, 0)
+							firetouchinterest(getChar().HumanoidRootPart, item.Parent, 1)
+						end
+					end
+				end
+			end)
+		end
+	end,
+})
+
+EconomyTab:CreateButton({
+	Name = "Force Spawn Wonder Weapons Only (Gc Table Patch)",
+	Callback = function()
+		local wonderWeapons = {"Ray Gun", "Wunderwaffe DG-2", "Blundergat", "Ray Gun Mark II", "Thundergun"}
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and (rawget(v, "MysteryBoxTable") or rawget(v, "BoxWeapons")) then
+				rawset(v, "MysteryBoxTable", wonderWeapons)
+				rawset(v, "BoxWeapons", wonderWeapons)
+			end
+		end
+		createnotification("Mystery Box", "Overwrote Mystery Box weapon table with Wonder Weapons!", 4)
+	end,
+})
+
+EconomyTab:CreateButton({
+	Name = "Bypass Mystery Box Teddy Bear Location Swap",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" then
+				if rawget(v, "TeddyBearChance") then rawset(v, "TeddyBearChance", 0) end
+				if rawget(v, "BoxMoveChance") then rawset(v, "BoxMoveChance", 0) end
+			end
+		end
+		createnotification("Mystery Box", "Removed Teddy Bear chance completely!", 3)
+	end,
+})
+
+EconomyTab:CreateToggle({
+	Name = "Infinite Box Spin Spam (Bypass Rolling Timer)",
+	CurrentValue = false,
+	Callback = function(val)
+		stoploop("spamBoxSpins")
+		if val then
+			loopConnections["spamBoxSpins"] = RunService.Heartbeat:Connect(function()
+				if R.MysteryBox then
+					R.MysteryBox:FireServer()
+				end
+			end)
+		end
+	end,
+})
+
+EconomyTab:CreateButton({
+	Name = "Unlock All Hidden/Map-Locked Weapons in Box",
+	Callback = function()
+		for _, v in pairs(getgc(true)) do
+			if type(v) == "table" and rawget(v, "LockedWeapons") then
+				rawset(v, "LockedWeapons", {})
+			end
+		end
+		createnotification("Mystery Box", "Unlocked all map weapons inside Box pool!", 3)
+	end,
+})
 
 EconomyTab:CreateButton({
 	Name = "Add Points Instant",
@@ -4249,6 +4459,129 @@ AdminTab:CreateButton({
 			end
 		end
 		createnotification("Target Admin", "Stripped weapons from " .. selectedTarget, 3)
+	end,
+})
+
+-- Target Administration Extenders
+AdminTab:CreateSection("Target Health & Physics Hooks")
+
+AdminTab:CreateButton({
+	Name = "Void Target (Teleport to Underworld)",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+				v.Character.HumanoidRootPart.CFrame = CFrame.new(0, -500, 0)
+			end
+		end
+		createnotification("Target Admin", "Sent " .. selectedTarget .. " to the void!", 3)
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Launch Target into Sky",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+				v.Character.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 5000, 0)
+			end
+		end
+		createnotification("Target Admin", "Launched " .. selectedTarget .. " into orbit!", 3)
+	end,
+})
+
+AdminTab:CreateToggle({
+	Name = "Loop Teleport Target to Me",
+	CurrentValue = false,
+	Callback = function(val)
+		stoploop("loopTpTarget")
+		if val then
+			loopConnections["loopTpTarget"] = RunService.Heartbeat:Connect(function()
+				for _, v in pairs(getPlayer(selectedTarget)) do
+					if v ~= lp and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and getChar():FindFirstChild("HumanoidRootPart") then
+						v.Character.HumanoidRootPart.CFrame = getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, -4)
+					end
+				end
+			end)
+		end
+	end,
+})
+
+AdminTab:CreateToggle({
+	Name = "Attach / Glue Target to My Back",
+	CurrentValue = false,
+	Callback = function(val)
+		stoploop("backpackTarget")
+		if val then
+			loopConnections["backpackTarget"] = RunService.Heartbeat:Connect(function()
+				for _, v in pairs(getPlayer(selectedTarget)) do
+					if v ~= lp and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and getChar():FindFirstChild("HumanoidRootPart") then
+						v.Character.HumanoidRootPart.CFrame = getChar().HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+					end
+				end
+			end)
+		end
+	end,
+})
+
+AdminTab:CreateSection("Target Economy & Progression Control")
+
+AdminTab:CreateButton({
+	Name = "Set Target Points to Zero (Bankrupt)",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if R.DeductPoints then
+				R.DeductPoints:FireServer(9999999, v)
+			elseif R.AddPoints then
+				R.AddPoints:FireServer(-9999999, v)
+			end
+		end
+		createnotification("Target Admin", "Bankrupted " .. selectedTarget, 3)
+	end,
+})
+
+AdminTab:CreateButton({
+	Name = "Give Target Max Points Stack (99,999,999)",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if R.AddPoints then
+				R.AddPoints:FireServer(99999999, v)
+			elseif zombieGameData["Paths"]["Damage"] then
+				zombieGameData["Paths"]["Damage"]:FireServer({{0, 99999999, zombieGameData["Strings"]["Rewards"], v}})
+			end
+		end
+		createnotification("Target Admin", "Maxed points for " .. selectedTarget, 3)
+	end,
+})
+
+AdminTab:CreateSection("Target Action Blocks & Distractions")
+
+AdminTab:CreateButton({
+	Name = "Force Target Sprint Exhaustion",
+	Callback = function()
+		for _, v in pairs(getPlayer(selectedTarget)) do
+			if v.Character and v.Character:FindFirstChild("Stamina") then
+				v.Character.Stamina.Value = 0
+			end
+		end
+	end,
+})
+
+AdminTab:CreateToggle({
+	Name = "Fling Selected Target",
+	CurrentValue = false,
+	Callback = function(val)
+		stoploop("flingTarget")
+		if val then
+			loopConnections["flingTarget"] = RunService.Heartbeat:Connect(function()
+				for _, v in pairs(getPlayer(selectedTarget)) do
+					if v ~= lp and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+						local hrp = v.Character.HumanoidRootPart
+						hrp.AssemblyLinearVelocity = Vector3.new(math.random(-10000, 10000), 10000, math.random(-10000, 10000))
+						hrp.AssemblyAngularVelocity = Vector3.new(10000, 10000, 10000)
+					end
+				end
+			end)
+		end
 	end,
 })
 
