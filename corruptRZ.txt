@@ -2079,6 +2079,16 @@ CombatTab:CreateButton({
 	end,
 })
 
+CombatTab:CreateButton({
+	Name = "Nuke Map (Fire All Damage Remotes)",
+	Callback = function()
+		for _, zombie in pairs(zombieGameData["zombies"]()) do
+			dealDamage(zombie, math.huge)
+		end
+		createnotification("Remote Engine", "Nuked Zombies!", 5)
+	end,
+})
+
 --========================================================--
 -- 4. DEFENSE & GODMODE TAB
 --========================================================--
