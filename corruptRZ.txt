@@ -4316,8 +4316,6 @@ EconomyTab:CreateToggle({
 --========================================================--
 -- 15. TARGET ADMIN TAB
 --========================================================--
-AdminTab:CreateSection("Player Selection")
-
 local function getPlayerList()
 	local list = {"All Players", "LocalPlayer (Me)"}
 	for _, p in pairs(Players:GetPlayers()) do
@@ -4327,23 +4325,28 @@ local function getPlayerList()
 end
 
 local TargetDropdown = AdminTab:CreateDropdown({
-	Name = "Select Target Player",
+	Name = "Select Target",
 	Options = getPlayerList(),
 	CurrentOption = {"All Players"},
 	MultipleOptions = false,
 	Flag = "TargetPlayerDropdown",
 	Callback = function(Option)
-		selectedTarget = parseOption(Option)
+		selectedTarget = type(Option) == "table" and Option[1] or Option
 	end,
 })
-
 
 AdminTab:CreateButton({
-	Name = "Refresh Player Selection List",
+	Name = "Refresh Player List",
 	Callback = function()
-		notifyLog("Target", "Refreshed target selection cache!")
+		TargetDropdown:Refresh(getPlayerList())
+		createnotification("Admin", "Player dropdown refreshed!", 3)
 	end,
 })
+
+Players.PlayerAdded:Connect(function() TargetDropdown:Refresh(getPlayerList()) end)
+Players.PlayerRemoving:Connect(function() TargetDropdown:Refresh(getPlayerList()) end)
+
+AdminTab:CreateSection("Direct Combat & Health Actions")
 
 AdminTab:CreateButton({
 	Name = "Teleport To Target Player",
