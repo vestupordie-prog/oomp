@@ -4696,6 +4696,51 @@ AdminTab:CreateButton({
 	end,
 })
 
+AdminTab:CreateSection("Auras")
+
+local playerAura, plrAuraDeb = nil, tick()
+AdminTab:CreateToggle({
+	Name = "Player Damage Aura",
+	CurrentValue = false,
+	Callback = function(val)
+		if val then
+			playerAura = RunService.Heartbeat:Connect(function()
+				if (tick() - plrAuraDeb) < 0.5 then return end
+				plrAuraDeb = tick()
+				for _, plr in pairs(Players:GetPlayers()) do
+					if plr ~= lp and plr.Character and (getChar():GetPivot().Position - plr.Character:GetPivot().Position).Magnitude < 15 then
+						task.spawn(function() dealDamage(plr.Character, math.huge) end)
+					end
+				end
+			end)
+		else
+			if playerAura then playerAura:Disconnect() playerAura = nil end
+		end
+	end,
+})
+
+local reviveAura, revauradeb = nil, tick()
+AdminTab:CreateToggle({
+	Name = "Revive Aura",
+	CurrentValue = false,
+	Callback = function(val)
+		if val then
+			reviveAura = RunService.Heartbeat:Connect(function()
+				if (tick() - revauradeb) < 0.5 then return end
+				revauradeb = tick()
+				for _, plr in pairs(Players:GetPlayers()) do
+					if plr ~= lp and plr.Character and (getChar():GetPivot().Position - plr.Character:GetPivot().Position).Magnitude < 15 then
+						task.spawn(function() resPlr(plr) end)
+					end
+				end
+			end)
+		else
+			if reviveAura then reviveAura:Disconnect() reviveAura = nil end
+		end
+	end,
+})
+
+
 
 --========================================================--
 -- 16. SERVER & UTILITY TAB
