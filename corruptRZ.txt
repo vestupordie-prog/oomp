@@ -3614,14 +3614,15 @@ ProgressionTab:CreateSlider({
 ProgressionTab:CreateDropdown({
 	Name = "XP Payload Presets",
 	Options = {"1K", "10K", "100K", "1M"},
-	CurrentOption = {"10K"},
+	CurrentOption = "10K", -- fixed: string, not table
 	MultipleOptions = false,
 	Callback = function(opt)
-		local v = parseOption(opt)
-		if v == "1K" then xpAmount = 1000
-		elseif v == "10K" then xpAmount = 10000
-		elseif v == "100K" then xpAmount = 100000
-		elseif v == "1M" then xpAmount = 1000000
+		-- some libs pass string, some pass {string}; handle both
+		local selected = type(opt) == "table" and opt[1] or opt
+		if selected == "1K" then xpAmount = 1000
+		elseif selected == "10K" then xpAmount = 10000
+		elseif selected == "100K" then xpAmount = 100000
+		elseif selected == "1M" then xpAmount = 1000000
 		end
 	end,
 })
@@ -3630,38 +3631,59 @@ local doubleXPToggle = false
 ProgressionTab:CreateToggle({
 	Name = "Double XP Arguments Intercept",
 	CurrentValue = false,
-	Callback = function(val) doubleXPToggle = val end,
+	Callback = function(val)
+		doubleXPToggle = val
+	end,
 })
 
 ProgressionTab:CreateButton({
 	Name = "Give Single XP Boost / Payload",
 	Callback = function()
-		if R.XPGain then
-			R.XPGain:FireServer(xpAmount, "Kills", true)
-			R.XPGain:FireServer(xpAmount)
-			createnotification("XP Gain", "Sent XP Gain Remote Payload: " .. tostring(xpAmount), 3)
-		else
+		if not R.XPGain then
 			createnotification("XP Fail", "XPGain remote not found!", 3)
+			return
 		end
+
+		-- Try the "Kills" source pattern with double XP flag
+		R.XPGain:FireServer(xpAmount, "Kills", doubleXPToggle)
+		-- Fallback: plain amount (some games use this)
+		R.XPGain:FireServer(xpAmount)
+
+		createnotification(
+			"XP Gain",
+			"Sent XP Payload: " .. tostring(xpAmount) .. (doubleXPToggle and " [2x]" or ""),
+			3
+		)
 	end,
 })
 
 local autoXP = false
+local autoXPCoroutine = nil
+
 ProgressionTab:CreateToggle({
 	Name = "Continuous XP Injection Loop",
 	CurrentValue = false,
 	Callback = function(val)
 		autoXP = val
-		task.spawn(function()
-			while autoXP do
-				if R.XPGain then
-					R.XPGain:FireServer(xpAmount)
+
+		if val then
+			-- prevent duplicate loops
+			if autoXPCoroutine then return end
+
+			autoXPCoroutine = task.spawn(function()
+				while autoXP do
+					if R.XPGain then
+						R.XPGain:FireServer(xpAmount, "Kills", doubleXPToggle)
+						R.XPGain:FireServer(xpAmount)
+					end
+					task.wait(0.5)
 				end
-				task.wait(0.5)
-			end
-		end)
+				autoXPCoroutine = nil -- cleanup when loop dies
+			end)
+		end
 	end,
 })
+
 
 ProgressionTab:CreateSection("Tokens & Progression Remotes")
 
